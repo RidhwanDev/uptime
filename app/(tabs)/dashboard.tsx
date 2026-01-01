@@ -1,9 +1,9 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { colors, spacing, typography } from '../../src/theme';
-import { Card } from '../../src/components';
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { colors, spacing, typography } from "../../src/theme";
+import { Card } from "../../src/components";
 
 export default function DashboardScreen() {
   return (
@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xl,
   },
   title: {
-    fontSize: typography.fontSize['3xl'],
+    fontSize: typography.fontSize["3xl"],
     fontWeight: typography.fontWeight.bold,
     color: colors.text,
   },
@@ -71,16 +71,15 @@ const styles = StyleSheet.create({
     lineHeight: typography.fontSize.base * typography.lineHeight.normal,
   },
   streakNumber: {
-    fontSize: typography.fontSize['4xl'],
+    fontSize: typography.fontSize["4xl"],
     fontWeight: typography.fontWeight.bold,
     color: colors.primary,
     marginTop: spacing.sm,
   },
   uptimeNumber: {
-    fontSize: typography.fontSize['4xl'],
+    fontSize: typography.fontSize["4xl"],
     fontWeight: typography.fontWeight.bold,
     color: colors.accent,
     marginTop: spacing.sm,
   },
 });
-
