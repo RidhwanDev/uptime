@@ -1,13 +1,20 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { StatusBar } from 'expo-status-bar';
-import { useRouter } from 'expo-router';
-import { colors, spacing, typography } from '../src/theme';
-import { Button } from '../src/components';
+import React from "react";
+import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { StatusBar } from "expo-status-bar";
+import { useRouter } from "expo-router";
+import { colors, spacing, typography } from "../src/theme";
+import { Button } from "../src/components";
+import { useAuth } from "../src/contexts/AuthContext";
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { bypassLogin } = useAuth();
+
+  const handleBypass = async () => {
+    await bypassLogin();
+    router.replace("/(tabs)/dashboard");
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -23,18 +30,30 @@ export default function LoginScreen() {
 
         <View style={styles.description}>
           <Text style={styles.descriptionText}>
-            Commit to daily posting, track your streak, and compete on the leaderboard.
-            Get featured when you stay consistent!
+            Commit to daily posting, track your streak, and compete on the
+            leaderboard. Get featured when you stay consistent!
           </Text>
         </View>
 
         <Button
           title="Log in with TikTok"
-          onPress={() => router.push('/(onboarding)/tiktok-auth')}
+          onPress={() => router.push("/(onboarding)/tiktok-auth")}
           variant="primary"
           size="large"
           style={styles.button}
         />
+
+        {/* DEV ONLY - Bypass button */}
+        <Button
+          title="🚧 DEV: Bypass Login"
+          onPress={handleBypass}
+          variant="secondary"
+          size="medium"
+          style={styles.devButton}
+        />
+        <Text style={styles.devNote}>
+          Development only - bypasses authentication
+        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -49,14 +68,14 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingTop: spacing.xl,
     flexGrow: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   header: {
-    marginBottom: spacing['3xl'],
-    alignItems: 'center',
+    marginBottom: spacing["3xl"],
+    alignItems: "center",
   },
   title: {
-    fontSize: typography.fontSize['5xl'],
+    fontSize: typography.fontSize["5xl"],
     fontWeight: typography.fontWeight.bold,
     color: colors.text,
     marginBottom: spacing.sm,
@@ -66,16 +85,26 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   description: {
-    marginBottom: spacing['2xl'],
+    marginBottom: spacing["2xl"],
   },
   descriptionText: {
     fontSize: typography.fontSize.base,
     color: colors.textSecondary,
     lineHeight: typography.fontSize.base * typography.lineHeight.normal,
-    textAlign: 'center',
+    textAlign: "center",
   },
   button: {
     marginTop: spacing.md,
   },
+  devButton: {
+    marginTop: spacing.xl,
+    opacity: 0.7,
+  },
+  devNote: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    textAlign: "center",
+    marginTop: spacing.xs,
+    fontStyle: "italic",
+  },
 });
-

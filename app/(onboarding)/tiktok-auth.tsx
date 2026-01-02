@@ -1,33 +1,41 @@
-import React from "react";
-import { View, Text, StyleSheet } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { colors, spacing, typography } from "../../src/theme";
 import { Button } from "../../src/components";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { authenticateWithTikTok } from "../../src/services/tiktokAuth";
 
 export default function TikTokAuthScreen() {
   const router = useRouter();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleTikTokAuth = async () => {
-    // TODO: Implement TikTok OAuth flow
-    // After OAuth completes, you would:
-    // 1. Store tokens
-    // 2. Set auth state (update the isAuthenticated in _layout.tsx)
-    // 3. Redirect to tabs - the root layout will handle showing tabs
+    setIsLoading(true);
+    setError(null);
 
-    // Simulate OAuth completion
-    // In real implementation, this would be:
-    // const result = await TikTokOAuth.authenticate();
-    // if (result.success) {
-    //   await saveTokens(result.tokens);
-    //   setAuthState(true); // Update auth context/state
-    //   router.replace('/(tabs)/dashboard');
-    // }
+    try {
+      const result = await authenticateWithTikTok();
 
-    // For now, just redirect to tabs
-    // Once you implement auth state management, update _layout.tsx to check real auth
-    router.replace("/(tabs)/dashboard");
+      if (result.success && result.tokens && result.userInfo) {
+        // Store tokens and user info using auth context
+        await login(result.tokens, result.userInfo);
+        
+        // Redirect to dashboard
+        router.replace("/(tabs)/dashboard");
+      } else {
+        setError(result.error || "Authentication failed. Please try again.");
+      }
+    } catch (err) {
+      console.error("TikTok auth error:", err);
+      setError(err instanceof Error ? err.message : "An unexpected error occurred");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -38,12 +46,21 @@ export default function TikTokAuthScreen() {
         <Text style={styles.subtitle}>
           Connect your TikTok account to track your daily posts
         </Text>
+        
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
         <Button
-          title="Log in with TikTok"
+          title={isLoading ? "Connecting..." : "Log in with TikTok"}
           onPress={handleTikTokAuth}
           variant="primary"
           size="large"
           style={styles.button}
+          disabled={isLoading}
+          loading={isLoading}
         />
       </View>
     </SafeAreaView>
@@ -75,5 +92,18 @@ const styles = StyleSheet.create({
   },
   button: {
     marginBottom: spacing.md,
+  },
+  errorContainer: {
+    marginBottom: spacing.md,
+    padding: spacing.md,
+    backgroundColor: colors.error + '20',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.error,
+  },
+  errorText: {
+    color: colors.error,
+    fontSize: typography.fontSize.sm,
+    textAlign: 'center',
   },
 });
