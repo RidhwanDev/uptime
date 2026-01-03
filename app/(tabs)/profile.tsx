@@ -1,11 +1,21 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import { useRouter } from 'expo-router';
 import { colors, spacing, typography } from '../../src/theme';
 import { Card, Button } from '../../src/components';
+import { useAuth } from '../../src/contexts/AuthContext';
 
 export default function ProfileScreen() {
+  const { user, logout } = useAuth();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar style="light" />
@@ -13,8 +23,22 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={styles.title}>Profile</Text>
+        {/* Profile Header with Avatar */}
+        <View style={styles.profileHeader}>
+          {user?.avatarUrl ? (
+            <Image
+              source={{ uri: user.avatarUrl }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={styles.avatarPlaceholder}>
+              <Text style={styles.avatarPlaceholderText}>
+                {user?.tiktokHandle?.charAt(0)?.toUpperCase() || '?'}
+              </Text>
+            </View>
+          )}
+          <Text style={styles.displayName}>{user?.tiktokHandle || 'User'}</Text>
+          <Text style={styles.userId}>@{user?.tiktokHandle || 'unknown'}</Text>
         </View>
 
         <Card variant="elevated" style={styles.card}>
@@ -39,6 +63,14 @@ export default function ProfileScreen() {
           size="medium"
           style={styles.button}
         />
+
+        <Button
+          title="Log Out"
+          onPress={handleLogout}
+          variant="secondary"
+          size="medium"
+          style={styles.logoutButton}
+        />
       </ScrollView>
     </SafeAreaView>
   );
@@ -53,13 +85,43 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingTop: spacing.xl,
   },
-  header: {
-    marginBottom: spacing.xl,
+  profileHeader: {
+    alignItems: 'center',
+    marginBottom: spacing['2xl'],
   },
-  title: {
-    fontSize: typography.fontSize['3xl'],
+  avatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: spacing.md,
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  avatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: colors.surfaceDark,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 3,
+    borderColor: colors.primary,
+  },
+  avatarPlaceholderText: {
+    fontSize: typography.fontSize['4xl'],
     fontWeight: typography.fontWeight.bold,
     color: colors.text,
+  },
+  displayName: {
+    fontSize: typography.fontSize['2xl'],
+    fontWeight: typography.fontWeight.bold,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  userId: {
+    fontSize: typography.fontSize.base,
+    color: colors.textSecondary,
   },
   card: {
     marginBottom: spacing.lg,
@@ -77,6 +139,9 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: spacing.md,
+  },
+  logoutButton: {
+    marginTop: spacing.lg,
   },
 });
 

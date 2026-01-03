@@ -13,11 +13,12 @@ interface AuthContextType {
   user: {
     tiktokUserId?: string;
     tiktokHandle?: string;
+    avatarUrl?: string;
     accessToken?: string;
   } | null;
   login: (
     tokens: { accessToken: string; refreshToken: string; expiresIn: number },
-    userInfo: { tiktokUserId: string; tiktokHandle: string }
+    userInfo: { tiktokUserId: string; tiktokHandle: string; avatarUrl?: string }
   ) => Promise<void>;
   logout: () => Promise<void>;
   bypassLogin: () => Promise<void>; // DEV ONLY - bypass authentication
@@ -50,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser({
           tiktokUserId: userInfo.tiktokUserId,
           tiktokHandle: userInfo.tiktokHandle,
+          avatarUrl: userInfo.avatarUrl,
           accessToken,
         });
       }
@@ -62,7 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (
     tokens: { accessToken: string; refreshToken: string; expiresIn: number },
-    userInfo: { tiktokUserId: string; tiktokHandle: string }
+    userInfo: { tiktokUserId: string; tiktokHandle: string; avatarUrl?: string }
   ) => {
     try {
       // Store tokens securely
@@ -74,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser({
         tiktokUserId: userInfo.tiktokUserId,
         tiktokHandle: userInfo.tiktokHandle,
+        avatarUrl: userInfo.avatarUrl,
         accessToken: tokens.accessToken,
       });
     } catch (error) {

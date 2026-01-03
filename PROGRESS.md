@@ -54,40 +54,49 @@
 
 ### TikTok OAuth Integration
 
-**Status:** 🔴 Blocked - Redirect handling issue
+**Status:** 🟡 Blocked in Expo Go - Needs Development Build
 
 **What's Done:**
 
 - ✅ Authorization URL construction with PKCE
 - ✅ State token generation for CSRF protection
 - ✅ Code verifier/challenge generation
-- ✅ Browser opening and redirect listener setup
+- ✅ Token exchange implementation
+- ✅ User info fetching
+- ✅ Deep link listener setup
 - ✅ Extensive logging for debugging
 
 **Current Issue:**
 
-- ❌ Redirect from `auth.expo.io` not being intercepted properly in Expo Go
-- ❌ Browser stays open showing "Not Found" page instead of closing
-- ❌ Deep link listener not catching the redirect URL
+- ❌ TikTok requires HTTPS redirect URIs
+- ❌ Expo's auth.expo.io proxy shows "Forbidden" (app not published to Expo servers)
+- ❌ Expo Go cannot receive custom scheme redirects from TikTok
 
-**Attempted Solutions:**
+**Root Cause:**
 
-1. ✅ Switched from `openBrowserAsync` to `openAuthSessionAsync` (didn't resolve)
-2. ✅ Added `Linking.addEventListener` to catch deep links
-3. ✅ Updated URL matching to handle both `https://auth.expo.io` and `exp://` URLs
-4. ✅ Added comprehensive logging to track URL events
+TikTok OAuth requires HTTPS redirect URIs. In Expo Go:
 
-**Next Steps:**
+- Custom schemes (`uptime://`) are rejected by TikTok
+- `auth.expo.io` proxy requires app to be published to Expo's servers
 
-- Test in production build (Expo Go may have limitations with `auth.expo.io` proxy)
-- Consider using custom redirect endpoint if proxy continues to fail
-- Verify TikTok sandbox redirect URI configuration matches exactly
+**Solution: Create Development Build**
 
-**Technical Details:**
+```bash
+# Install EAS CLI
+npm install -g eas-cli
 
-- Redirect URI: `https://auth.expo.io/ridhwanromjon/uptime-2`
-- TikTok redirects correctly with code parameter
-- Issue: Expo proxy not redirecting back to app properly in development
+# Login to Expo
+eas login
+
+# Create development build for iOS
+eas build --profile development --platform ios
+```
+
+Then update TikTok redirect URI to: `uptime://auth/callback`
+
+**Workaround:**
+
+- DEV: Bypass Login button is available for testing other features
 
 ---
 
