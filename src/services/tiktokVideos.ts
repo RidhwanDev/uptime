@@ -13,6 +13,8 @@ const VIDEO_FIELDS = [
   "cover_image_url",
   "title",
   "video_description",
+  "view_count",
+  "like_count",
 ].join(",");
 
 export interface TikTokVideo {
@@ -21,6 +23,8 @@ export interface TikTokVideo {
   cover_image_url?: string;
   title?: string;
   video_description?: string;
+  view_count?: number;
+  like_count?: number;
 }
 
 export interface VideoListResponse {
@@ -39,6 +43,8 @@ export interface UptimeStats {
   postedToday: boolean;
   recentVideos: TikTokVideo[];
   postDates: Set<string>; // For calendar view
+  streakViews: number;    // Total views in current streak
+  streakLikes: number;    // Total likes in current streak
 }
 
 /**
@@ -237,6 +243,27 @@ export function calculateUptimeStats(
     .sort((a, b) => (b.create_time || 0) - (a.create_time || 0))
     .slice(0, 5);
 
+  // Calculate streak views and likes
+  // Find videos posted during the current streak period
+  let streakViews = 0;
+  let streakLikes = 0;
+  
+  if (currentStreak > 0) {
+    const streakStartDate = new Date();
+    streakStartDate.setDate(streakStartDate.getDate() - currentStreak + (postedToday ? 0 : 1));
+    streakStartDate.setHours(0, 0, 0, 0);
+    
+    for (const video of videos) {
+      if (video.create_time) {
+        const videoDate = new Date(video.create_time * 1000);
+        if (videoDate >= streakStartDate) {
+          streakViews += video.view_count || 0;
+          streakLikes += video.like_count || 0;
+        }
+      }
+    }
+  }
+
   return {
     currentStreak,
     longestStreak,
@@ -246,6 +273,8 @@ export function calculateUptimeStats(
     postedToday,
     recentVideos,
     postDates,
+    streakViews,
+    streakLikes,
   };
 }
 

@@ -8,7 +8,6 @@ import {
   TikTokAuthScreen,
   TimezoneSelectionScreen,
 } from "../screens";
-import { TestScreen } from "../screens/TestScreen";
 import { colors } from "../theme";
 
 const Stack = createNativeStackNavigator<OnboardingStackParamList>();
@@ -23,11 +22,6 @@ export const OnboardingStack: React.FC = () => {
         headerTintColor: colors.text,
       }}
     >
-      <Stack.Screen
-        name="Welcome"
-        component={TestScreen}
-        options={{ headerShown: false }}
-      />
       <Stack.Screen
         name="SignUp"
         component={SignUpScreen}

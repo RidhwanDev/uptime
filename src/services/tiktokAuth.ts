@@ -13,8 +13,10 @@ const TIKTOK_CLIENT_SECRET = process.env.EXPO_PUBLIC_TIKTOK_CLIENT_SECRET || "";
 // TikTok API Endpoints
 const TIKTOK_AUTH_URL = "https://www.tiktok.com/v2/auth/authorize/";
 const TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
+// user.info.basic: open_id, union_id, avatar_url, display_name
+// user.info.profile: username, bio_description, profile_deep_link, is_verified
 const TIKTOK_USER_INFO_URL =
-  "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name";
+  "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username,is_verified";
 
 // Generate redirect URI
 // For development builds: uses custom scheme (uptime://)
@@ -31,7 +33,7 @@ const getRedirectUri = (): string => {
   if (envUri) {
     return envUri;
   }
-  
+
   // Priority 2: Auto-generated URI (works in development builds)
   // In development builds, this will be: uptime://auth/callback
   // In Expo Go, this will be: exp://192.168.x.x:8081/--/auth/callback
@@ -52,13 +54,16 @@ console.log(
 console.log(
   "🔑 TikTok Client Key:",
   TIKTOK_CLIENT_KEY
-    ? `${TIKTOK_CLIENT_KEY.substring(0, 8)}... (${TIKTOK_CLIENT_KEY.length} chars)`
+    ? `${TIKTOK_CLIENT_KEY.substring(0, 8)}... (${
+        TIKTOK_CLIENT_KEY.length
+      } chars)`
     : "❌ NOT LOADED"
 );
 
 interface TikTokUserInfo {
   tiktokUserId: string;
-  tiktokHandle: string;
+  tiktokHandle: string; // @username
+  displayName: string; // Display name
   avatarUrl?: string;
 }
 
@@ -126,7 +131,11 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
 
     // Step 3: Build authorization URL
     // TikTok uses client_key instead of client_id
-    const scopes = "user.info.basic,video.list";
+    // Request all the scopes we need
+    // user.info.basic: open_id, union_id, avatar_url, display_name
+    // user.info.profile: username, is_verified
+    // video.list: access to user's videos with view_count, like_count
+    const scopes = "user.info.basic,user.info.profile,video.list";
     const authUrl = new URL(TIKTOK_AUTH_URL);
     authUrl.searchParams.append("client_key", TIKTOK_CLIENT_KEY);
     authUrl.searchParams.append("response_type", "code");
@@ -174,18 +183,22 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
       } else if (result.type === "cancel" || result.type === "dismiss") {
         // Browser was closed - this is expected when auth.expo.io shows "Forbidden"
         // User needs to paste the URL manually
-        console.log("📥 Browser closed (type:", result.type, ") - showing URL paste fallback");
+        console.log(
+          "📥 Browser closed (type:",
+          result.type,
+          ") - showing URL paste fallback"
+        );
       }
-      
+
       if (result.type === "dismiss" && !redirectUrl) {
         // Browser was dismissed - check if we got a link via the listener
         console.log("📥 Browser dismissed, checking for deep link...");
-        
+
         // Wait a moment to see if we get a deep link
-        const timeoutPromise = new Promise<null>((resolve) => 
+        const timeoutPromise = new Promise<null>((resolve) =>
           setTimeout(() => resolve(null), 2000)
         );
-        
+
         const possibleUrl = await Promise.race([linkPromise, timeoutPromise]);
         if (possibleUrl) {
           redirectUrl = possibleUrl;
@@ -208,9 +221,9 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
 
     if (!redirectUrl) {
       // Return a specific error that tells the UI to show the URL paste fallback
-      return { 
-        success: false, 
-        error: "SHOW_URL_INPUT" 
+      return {
+        success: false,
+        error: "SHOW_URL_INPUT",
       };
     }
 
@@ -236,7 +249,10 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
 
     // Verify state matches (CSRF protection)
     if (returnedState !== state) {
-      console.warn("⚠️ State mismatch:", { expected: state, received: returnedState });
+      console.warn("⚠️ State mismatch:", {
+        expected: state,
+        received: returnedState,
+      });
       return { success: false, error: "State mismatch - possible CSRF attack" };
     }
 
@@ -305,20 +321,26 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
         tokens: { accessToken, refreshToken, expiresIn },
         userInfo: {
           tiktokUserId: "unknown",
-          tiktokHandle: "TikTok User",
+          tiktokHandle: "unknown",
+          displayName: "TikTok User",
         },
       };
     }
 
     const user = userInfoData.data?.user;
-    console.log("✅ User info received:", user?.display_name);
+    console.log(
+      "✅ User info received:",
+      user?.display_name,
+      "@" + user?.username
+    );
 
     return {
       success: true,
       tokens: { accessToken, refreshToken, expiresIn },
       userInfo: {
         tiktokUserId: user?.open_id || user?.union_id || "unknown",
-        tiktokHandle: user?.display_name || "TikTok User",
+        tiktokHandle: user?.username || user?.display_name || "unknown",
+        displayName: user?.display_name || "TikTok User",
         avatarUrl: user?.avatar_url,
       },
     };
@@ -338,7 +360,9 @@ export const getTikTokRedirectUri = () => FINAL_REDIRECT_URI;
  * Complete authentication using a manually pasted URL
  * This is a fallback for when the browser doesn't redirect properly (e.g., Expo Go with auth.expo.io proxy)
  */
-export async function completeAuthWithUrl(pastedUrl: string): Promise<AuthResult> {
+export async function completeAuthWithUrl(
+  pastedUrl: string
+): Promise<AuthResult> {
   try {
     console.log("🔗 Completing auth with pasted URL...");
     console.log("📥 URL:", pastedUrl);
@@ -355,7 +379,7 @@ export async function completeAuthWithUrl(pastedUrl: string): Promise<AuthResult
       // URL parsing failed, try regex extraction
       const codeMatch = pastedUrl.match(/[?&]code=([^&]+)/);
       const stateMatch = pastedUrl.match(/[?&]state=([^&]+)/);
-      
+
       code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
       returnedState = stateMatch ? decodeURIComponent(stateMatch[1]) : null;
     }
@@ -368,9 +392,10 @@ export async function completeAuthWithUrl(pastedUrl: string): Promise<AuthResult
 
     // Check if we have stored PKCE values
     if (!storedCodeVerifier) {
-      return { 
-        success: false, 
-        error: "Session expired. Please tap 'Log in with TikTok' again, then paste the URL." 
+      return {
+        success: false,
+        error:
+          "Session expired. Please tap 'Log in with TikTok' again, then paste the URL.",
       };
     }
 
@@ -440,7 +465,10 @@ export async function completeAuthWithUrl(pastedUrl: string): Promise<AuthResult
     console.log("📥 User info response status:", userInfoResponse.status);
 
     // TikTok returns error object even on success with code "ok"
-    const hasError = userInfoData.error && userInfoData.error.code && userInfoData.error.code !== "ok";
+    const hasError =
+      userInfoData.error &&
+      userInfoData.error.code &&
+      userInfoData.error.code !== "ok";
     if (!userInfoResponse.ok || hasError) {
       console.error("❌ User info error:", userInfoData);
       return {
@@ -448,20 +476,26 @@ export async function completeAuthWithUrl(pastedUrl: string): Promise<AuthResult
         tokens: { accessToken, refreshToken, expiresIn },
         userInfo: {
           tiktokUserId: "unknown",
-          tiktokHandle: "TikTok User",
+          tiktokHandle: "unknown",
+          displayName: "TikTok User",
         },
       };
     }
 
     const user = userInfoData.data?.user;
-    console.log("✅ User info received:", user?.display_name);
+    console.log(
+      "✅ User info received:",
+      user?.display_name,
+      "@" + user?.username
+    );
 
     return {
       success: true,
       tokens: { accessToken, refreshToken, expiresIn },
       userInfo: {
         tiktokUserId: user?.open_id || user?.union_id || "unknown",
-        tiktokHandle: user?.display_name || "TikTok User",
+        tiktokHandle: user?.username || user?.display_name || "unknown",
+        displayName: user?.display_name || "TikTok User",
         avatarUrl: user?.avatar_url,
       },
     };

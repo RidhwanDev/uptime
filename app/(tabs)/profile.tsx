@@ -27,12 +27,48 @@ const MOCK_STATS = {
 
 // Achievement badges
 const ACHIEVEMENTS = [
-  { id: "1", icon: "flame", label: "First Streak", unlocked: true, color: "#FF6B6B" },
-  { id: "2", icon: "calendar", label: "7 Day Streak", unlocked: false, color: "#4ECDC4" },
-  { id: "3", icon: "trophy", label: "Top 10", unlocked: false, color: "#FFE66D" },
-  { id: "4", icon: "star", label: "30 Day Streak", unlocked: false, color: "#A855F7" },
-  { id: "5", icon: "rocket", label: "100 Posts", unlocked: false, color: "#00F2EA" },
-  { id: "6", icon: "medal", label: "#1 Weekly", unlocked: false, color: "#FF0050" },
+  {
+    id: "1",
+    icon: "flame",
+    label: "First Streak",
+    unlocked: true,
+    color: "#FF6B6B",
+  },
+  {
+    id: "2",
+    icon: "calendar",
+    label: "7 Day Streak",
+    unlocked: false,
+    color: "#4ECDC4",
+  },
+  {
+    id: "3",
+    icon: "trophy",
+    label: "Top 10",
+    unlocked: false,
+    color: "#FFE66D",
+  },
+  {
+    id: "4",
+    icon: "star",
+    label: "30 Day Streak",
+    unlocked: false,
+    color: "#A855F7",
+  },
+  {
+    id: "5",
+    icon: "rocket",
+    label: "100 Posts",
+    unlocked: false,
+    color: "#00F2EA",
+  },
+  {
+    id: "6",
+    icon: "medal",
+    label: "#1 Weekly",
+    unlocked: false,
+    color: "#FF0050",
+  },
 ];
 
 export default function ProfileScreen() {
@@ -76,7 +112,7 @@ export default function ProfileScreen() {
               <Text style={styles.rankText}>#{MOCK_STATS.rank}</Text>
             </View>
           </View>
-          <Text style={styles.displayName}>{user?.tiktokHandle || "User"}</Text>
+          <Text style={styles.displayName}>{user?.displayName || "User"}</Text>
           <Text style={styles.userId}>@{user?.tiktokHandle || "unknown"}</Text>
         </View>
 
@@ -113,7 +149,8 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Achievements</Text>
             <Text style={styles.sectionSubtitle}>
-              {ACHIEVEMENTS.filter((a) => a.unlocked).length}/{ACHIEVEMENTS.length} unlocked
+              {ACHIEVEMENTS.filter((a) => a.unlocked).length}/
+              {ACHIEVEMENTS.length} unlocked
             </Text>
           </View>
           <ScrollView
@@ -122,7 +159,10 @@ export default function ProfileScreen() {
             contentContainerStyle={styles.achievementsScroll}
           >
             {ACHIEVEMENTS.map((achievement) => (
-              <AchievementBadge key={achievement.id} achievement={achievement} />
+              <AchievementBadge
+                key={achievement.id}
+                achievement={achievement}
+              />
             ))}
           </ScrollView>
         </View>

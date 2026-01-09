@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,138 +6,130 @@ import {
   ScrollView,
   Image,
   Pressable,
+  ActivityIndicator,
+  RefreshControl,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, typography } from "../../src/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
-
-// Mock data for leaderboard
-const MOCK_LEADERBOARD = [
-  {
-    id: "1",
-    rank: 1,
-    handle: "contentqueen",
-    avatarUrl: "https://i.pravatar.cc/150?img=1",
-    currentStreak: 45,
-    uptimePercent: 100,
-    totalPosts: 156,
-  },
-  {
-    id: "2",
-    rank: 2,
-    handle: "dailyvibes",
-    avatarUrl: "https://i.pravatar.cc/150?img=2",
-    currentStreak: 32,
-    uptimePercent: 97,
-    totalPosts: 134,
-  },
-  {
-    id: "3",
-    rank: 3,
-    handle: "creativesoul",
-    avatarUrl: "https://i.pravatar.cc/150?img=3",
-    currentStreak: 28,
-    uptimePercent: 93,
-    totalPosts: 98,
-  },
-  {
-    id: "4",
-    rank: 4,
-    handle: "tiktoker_pro",
-    avatarUrl: "https://i.pravatar.cc/150?img=4",
-    currentStreak: 21,
-    uptimePercent: 87,
-    totalPosts: 112,
-  },
-  {
-    id: "5",
-    rank: 5,
-    handle: "viralmaker",
-    avatarUrl: "https://i.pravatar.cc/150?img=5",
-    currentStreak: 18,
-    uptimePercent: 83,
-    totalPosts: 89,
-  },
-  {
-    id: "6",
-    rank: 6,
-    handle: "trendsetterx",
-    avatarUrl: "https://i.pravatar.cc/150?img=6",
-    currentStreak: 14,
-    uptimePercent: 77,
-    totalPosts: 67,
-  },
-  {
-    id: "7",
-    rank: 7,
-    handle: "clips_daily",
-    avatarUrl: "https://i.pravatar.cc/150?img=7",
-    currentStreak: 12,
-    uptimePercent: 73,
-    totalPosts: 54,
-  },
-  {
-    id: "8",
-    rank: 8,
-    handle: "funnymoments",
-    avatarUrl: "https://i.pravatar.cc/150?img=8",
-    currentStreak: 9,
-    uptimePercent: 67,
-    totalPosts: 45,
-  },
-  {
-    id: "9",
-    rank: 9,
-    handle: "lifestyle_hub",
-    avatarUrl: "https://i.pravatar.cc/150?img=9",
-    currentStreak: 7,
-    uptimePercent: 60,
-    totalPosts: 38,
-  },
-  {
-    id: "10",
-    rank: 10,
-    handle: "dance_fever",
-    avatarUrl: "https://i.pravatar.cc/150?img=10",
-    currentStreak: 5,
-    uptimePercent: 53,
-    totalPosts: 29,
-  },
-];
+import { fetchLeaderboard, getUserRank } from "../../src/services/supabaseSync";
+import { LeaderboardEntry } from "../../src/lib/database.types";
 
 type SortOption = "streak" | "uptime" | "posts";
+
+interface LeaderboardUser {
+  id: string;
+  rank: number;
+  handle: string;
+  avatarUrl: string;
+  currentStreak: number;
+  uptimePercent: number;
+  totalPosts: number;
+  isCurrentUser?: boolean;
+}
 
 export default function LeaderboardScreen() {
   const { user } = useAuth();
   const [sortBy, setSortBy] = useState<SortOption>("streak");
+  const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentUserRank, setCurrentUserRank] = useState<number | null>(null);
+  const [currentUserStats, setCurrentUserStats] = useState<LeaderboardUser | null>(null);
 
-  // Sort the leaderboard based on selected option
-  const sortedLeaderboard = [...MOCK_LEADERBOARD].sort((a, b) => {
-    switch (sortBy) {
-      case "streak":
-        return b.currentStreak - a.currentStreak;
-      case "uptime":
-        return b.uptimePercent - a.uptimePercent;
-      case "posts":
-        return b.totalPosts - a.totalPosts;
-      default:
-        return 0;
+  const loadLeaderboard = useCallback(async () => {
+    try {
+      const sortType = sortBy === "posts" ? "streak" : sortBy; // API only supports streak/uptime
+      const data = await fetchLeaderboard(sortType, 20);
+      
+      // Transform data to our format
+      const transformed: LeaderboardUser[] = data.map((entry, index) => ({
+        id: entry.id,
+        rank: sortBy === "streak" ? entry.rank_by_streak : entry.rank_by_uptime,
+        handle: entry.tiktok_handle || "Unknown",
+        avatarUrl: entry.avatar_url || "",
+        currentStreak: entry.current_streak,
+        uptimePercent: Math.round(entry.uptime_30d),
+        totalPosts: entry.total_posts,
+      }));
+
+      // Sort locally if needed
+      const sorted = [...transformed].sort((a, b) => {
+        switch (sortBy) {
+          case "streak":
+            return b.currentStreak - a.currentStreak;
+          case "uptime":
+            return b.uptimePercent - a.uptimePercent;
+          case "posts":
+            return b.totalPosts - a.totalPosts;
+          default:
+            return 0;
+        }
+      });
+
+      // Re-assign ranks after local sort
+      sorted.forEach((item, index) => {
+        item.rank = index + 1;
+      });
+
+      setLeaderboard(sorted);
+
+      // Find current user in leaderboard
+      if (user?.id) {
+        const userEntry = sorted.find(e => e.id === user.id);
+        if (userEntry) {
+          setCurrentUserRank(userEntry.rank);
+          setCurrentUserStats(userEntry);
+        } else {
+          // Get rank from API if not in top results
+          const rank = await getUserRank(user.id);
+          if (rank) {
+            setCurrentUserRank(sortBy === "streak" ? rank.rankByStreak : rank.rankByUptime);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error loading leaderboard:", error);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
-  });
+  }, [sortBy, user?.id]);
 
-  // Add current user to bottom if not in top 10
-  const currentUserEntry = {
-    id: "current",
-    rank: 42,
+  useEffect(() => {
+    loadLeaderboard();
+  }, [loadLeaderboard]);
+
+  const onRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    loadLeaderboard();
+  }, [loadLeaderboard]);
+
+  // Current user entry for display
+  const currentUserEntry: LeaderboardUser = currentUserStats || {
+    id: user?.id || "current",
+    rank: currentUserRank || 0,
     handle: user?.tiktokHandle || "You",
     avatarUrl: user?.avatarUrl || "",
-    currentStreak: 4,
-    uptimePercent: 17,
-    totalPosts: 5,
+    currentStreak: 0,
+    uptimePercent: 0,
+    totalPosts: 0,
     isCurrentUser: true,
   };
+
+  if (isLoading) {
+    return (
+      <View style={styles.container}>
+        <StatusBar style="light" />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading leaderboard...</Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -145,6 +137,13 @@ export default function LeaderboardScreen() {
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primary}
+          />
+        }
       >
         {/* Header */}
         <View style={styles.header}>
@@ -174,38 +173,53 @@ export default function LeaderboardScreen() {
           />
         </View>
 
-        {/* Top 3 Podium */}
-        <View style={styles.podium}>
-          {/* 2nd Place */}
-          <PodiumItem user={sortedLeaderboard[1]} place={2} />
-          {/* 1st Place */}
-          <PodiumItem user={sortedLeaderboard[0]} place={1} />
-          {/* 3rd Place */}
-          <PodiumItem user={sortedLeaderboard[2]} place={3} />
-        </View>
+        {leaderboard.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="trophy-outline" size={48} color={colors.textSecondary} />
+            <Text style={styles.emptyText}>No data yet</Text>
+            <Text style={styles.emptySubtext}>Be the first on the leaderboard!</Text>
+          </View>
+        ) : (
+          <>
+            {/* Top 3 Podium */}
+            {leaderboard.length >= 3 && (
+              <View style={styles.podium}>
+                {/* 2nd Place */}
+                <PodiumItem user={leaderboard[1]} place={2} />
+                {/* 1st Place */}
+                <PodiumItem user={leaderboard[0]} place={1} />
+                {/* 3rd Place */}
+                <PodiumItem user={leaderboard[2]} place={3} />
+              </View>
+            )}
 
-        {/* Rest of Leaderboard */}
-        <View style={styles.list}>
-          {sortedLeaderboard.slice(3).map((item, index) => (
-            <LeaderboardRow
-              key={item.id}
-              user={item}
-              rank={index + 4}
-              sortBy={sortBy}
-            />
-          ))}
-        </View>
+            {/* Rest of Leaderboard */}
+            <View style={styles.list}>
+              {leaderboard.slice(3).map((item) => (
+                <LeaderboardRow
+                  key={item.id}
+                  user={item}
+                  rank={item.rank}
+                  sortBy={sortBy}
+                  isCurrentUser={item.id === user?.id}
+                />
+              ))}
+            </View>
+          </>
+        )}
 
         {/* Current User Position */}
-        <View style={styles.currentUserSection}>
-          <Text style={styles.currentUserLabel}>Your Position</Text>
-          <LeaderboardRow
-            user={currentUserEntry}
-            rank={currentUserEntry.rank}
-            sortBy={sortBy}
-            isCurrentUser
-          />
-        </View>
+        {currentUserEntry.rank > 0 && (
+          <View style={styles.currentUserSection}>
+            <Text style={styles.currentUserLabel}>Your Position</Text>
+            <LeaderboardRow
+              user={currentUserEntry}
+              rank={currentUserEntry.rank}
+              sortBy={sortBy}
+              isCurrentUser
+            />
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -243,7 +257,7 @@ function PodiumItem({
   user,
   place,
 }: {
-  user: (typeof MOCK_LEADERBOARD)[0];
+  user: LeaderboardUser;
   place: 1 | 2 | 3;
 }) {
   const heights = { 1: 100, 2: 70, 3: 50 };
@@ -309,7 +323,7 @@ function LeaderboardRow({
   sortBy,
   isCurrentUser = false,
 }: {
-  user: (typeof MOCK_LEADERBOARD)[0];
+  user: LeaderboardUser;
   rank: number;
   sortBy: SortOption;
   isCurrentUser?: boolean;
@@ -395,6 +409,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
     paddingBottom: spacing["2xl"],
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    color: colors.textSecondary,
+    fontSize: typography.fontSize.base,
+  },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing["3xl"],
+  },
+  emptyText: {
+    fontSize: typography.fontSize.lg,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.text,
+    marginTop: spacing.md,
+  },
+  emptySubtext: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   header: {
     marginBottom: spacing.md,

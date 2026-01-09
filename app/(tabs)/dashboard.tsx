@@ -21,6 +21,7 @@ import {
   UptimeStats,
   TikTokVideo,
 } from "../../src/services/tiktokVideos";
+import { fullSyncForUser } from "../../src/services/supabaseSync";
 
 // Open video in TikTok app or browser
 const openTikTokVideo = (videoId: string) => {
@@ -60,6 +61,17 @@ export default function DashboardScreen() {
       const videos = await fetchAllUserVideos(user.accessToken, 100);
       const uptimeStats = calculateUptimeStats(videos, 30);
       setStats(uptimeStats);
+
+      // Sync to Supabase in background (non-blocking)
+      if (user.id && videos.length > 0) {
+        fullSyncForUser(user.id, videos).then((success) => {
+          if (success) {
+            console.log("✅ Synced to Supabase");
+          } else {
+            console.warn("⚠️ Supabase sync failed (non-critical)");
+          }
+        });
+      }
     } catch (err) {
       console.error("Error loading videos:", err);
       setError(err instanceof Error ? err.message : "Failed to load videos");
@@ -67,7 +79,7 @@ export default function DashboardScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [user?.accessToken]);
+  }, [user?.accessToken, user?.id]);
 
   useEffect(() => {
     loadVideos();
@@ -84,6 +96,17 @@ export default function DashboardScreen() {
       month: "short",
       day: "numeric",
     });
+  };
+
+  // Format large numbers (1000 -> 1K, 1000000 -> 1M)
+  const formatNumber = (num: number): string => {
+    if (num >= 1000000) {
+      return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
+    }
+    if (num >= 1000) {
+      return (num / 1000).toFixed(1).replace(/\.0$/, "") + "K";
+    }
+    return num.toString();
   };
 
   if (isLoading) {
@@ -116,7 +139,7 @@ export default function DashboardScreen() {
         <View style={styles.header}>
           <View style={styles.headerLeft}>
             <Text style={styles.greeting}>
-              Hey, {user?.tiktokHandle || "Creator"}!
+              Hey, {user?.displayName || "Creator"}!
             </Text>
             <Text style={styles.subtitle}>
               {stats?.currentStreak && stats.currentStreak >= 7
@@ -175,7 +198,11 @@ export default function DashboardScreen() {
         </LinearGradient>
 
         {/* Streak Calendar */}
-        <StreakCalendar postDates={stats?.postDates} />
+        <StreakCalendar
+          postDates={stats?.postDates}
+          daysPosted={stats?.daysPosted || 0}
+          totalDays={stats?.totalDays || 30}
+        />
 
         {/* Quick Stats Row */}
         <View style={styles.quickStats}>
@@ -199,12 +226,12 @@ export default function DashboardScreen() {
               colors={["#FFB800", "#FF8C00"]}
               style={styles.quickStatIcon}
             >
-              <Ionicons name="calendar" size={16} color="#000" />
+              <Ionicons name="eye" size={16} color="#000" />
             </LinearGradient>
             <Text style={styles.quickStatValue}>
-              {stats?.daysPosted || 0}/{stats?.totalDays || 30}
+              {formatNumber(stats?.streakViews || 0)}
             </Text>
-            <Text style={styles.quickStatLabel}>Days Posted</Text>
+            <Text style={styles.quickStatLabel}>Streak Views</Text>
           </View>
 
           <View style={styles.quickStatDivider} />
@@ -214,12 +241,12 @@ export default function DashboardScreen() {
               colors={["#A855F7", "#7C3AED"]}
               style={styles.quickStatIcon}
             >
-              <Ionicons name="trophy" size={16} color="#FFF" />
+              <Ionicons name="heart" size={16} color="#FFF" />
             </LinearGradient>
             <Text style={styles.quickStatValue}>
-              {stats?.longestStreak || 0}
+              {formatNumber(stats?.streakLikes || 0)}
             </Text>
-            <Text style={styles.quickStatLabel}>Best Streak</Text>
+            <Text style={styles.quickStatLabel}>Streak Likes</Text>
           </View>
         </View>
 
@@ -275,7 +302,15 @@ function generateCalendarWeeks(numWeeks: number): string[][] {
   return weeks;
 }
 
-function StreakCalendar({ postDates }: { postDates?: Set<string> }) {
+function StreakCalendar({
+  postDates,
+  daysPosted,
+  totalDays,
+}: {
+  postDates?: Set<string>;
+  daysPosted: number;
+  totalDays: number;
+}) {
   const weeks = generateCalendarWeeks(3);
   const today = new Date().toISOString().split("T")[0];
   const dayLabels = ["S", "M", "T", "W", "T", "F", "S"];
@@ -327,22 +362,27 @@ function StreakCalendar({ postDates }: { postDates?: Set<string> }) {
         </View>
       ))}
 
-      {/* Legend */}
-      <View style={styles.calendarLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.calendarDayEmpty]} />
-          <Text style={styles.legendText}>Missed</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.calendarDayPosted]}>
-            <View style={styles.legendDotFill} />
+      {/* Legend and Days Posted */}
+      <View style={styles.calendarFooter}>
+        <View style={styles.calendarLegend}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, styles.calendarDayEmpty]} />
+            <Text style={styles.legendText}>Missed</Text>
           </View>
-          <Text style={styles.legendText}>Posted</Text>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, styles.calendarDayPosted]}>
+              <View style={styles.legendDotFill} />
+            </View>
+            <Text style={styles.legendText}>Posted</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, styles.calendarDayToday]} />
+            <Text style={styles.legendText}>Today</Text>
+          </View>
         </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, styles.calendarDayToday]} />
-          <Text style={styles.legendText}>Today</Text>
-        </View>
+        <Text style={styles.daysPostedText}>
+          {daysPosted}/{totalDays} days
+        </Text>
       </View>
     </View>
   );
@@ -534,11 +574,20 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: colors.primary,
   },
+  calendarFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: spacing.sm,
+  },
   calendarLegend: {
     flexDirection: "row",
-    justifyContent: "center",
-    marginTop: spacing.sm,
     gap: spacing.md,
+  },
+  daysPostedText: {
+    fontSize: typography.fontSize.xs,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
   },
   legendItem: {
     flexDirection: "row",
