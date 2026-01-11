@@ -12,28 +12,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, typography } from "../../src/theme";
 
-// Mock data for past featured creators
-const PAST_FEATURED = [
-  {
-    id: "1",
-    handle: "contentqueen",
-    avatarUrl: "https://i.pravatar.cc/150?img=1",
-    week: "Dec 23-29",
-  },
-  {
-    id: "2",
-    handle: "dailyvibes",
-    avatarUrl: "https://i.pravatar.cc/150?img=2",
-    week: "Dec 16-22",
-  },
-  {
-    id: "3",
-    handle: "creativesoul",
-    avatarUrl: "https://i.pravatar.cc/150?img=3",
-    week: "Dec 9-15",
-  },
-];
-
 // Coming soon interview teasers
 const UPCOMING_INTERVIEWS = [
   {
@@ -157,26 +135,6 @@ export default function FeaturedScreen() {
           </Pressable>
         </View>
 
-        {/* Past Featured Creators */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>⭐ Hall of Fame</Text>
-          </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.hallOfFameScroll}
-          >
-            {PAST_FEATURED.map((creator) => (
-              <PastFeaturedCard key={creator.id} creator={creator} />
-            ))}
-            <View style={styles.morePlaceholder}>
-              <Ionicons name="ellipsis-horizontal" size={24} color={colors.textSecondary} />
-              <Text style={styles.moreText}>More coming</Text>
-            </View>
-          </ScrollView>
-        </View>
-
         {/* Footer CTA */}
         <View style={styles.footerCta}>
           <Text style={styles.footerCtaEmoji}>✨</Text>
@@ -241,22 +199,6 @@ function InterviewCard({
         <Ionicons name="lock-closed" size={14} color={colors.textTertiary} />
       </View>
     </Pressable>
-  );
-}
-
-function PastFeaturedCard({
-  creator,
-}: {
-  creator: (typeof PAST_FEATURED)[0];
-}) {
-  return (
-    <View style={styles.pastFeaturedCard}>
-      <Image source={{ uri: creator.avatarUrl }} style={styles.pastFeaturedAvatar} />
-      <Text style={styles.pastFeaturedHandle} numberOfLines={1}>
-        @{creator.handle}
-      </Text>
-      <Text style={styles.pastFeaturedWeek}>{creator.week}</Text>
-    </View>
   );
 }
 
@@ -467,42 +409,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.text,
     fontWeight: typography.fontWeight.medium,
-  },
-  hallOfFameScroll: {
-    gap: spacing.md,
-  },
-  pastFeaturedCard: {
-    alignItems: "center",
-    width: 80,
-  },
-  pastFeaturedAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    borderWidth: 2,
-    borderColor: colors.accent,
-    marginBottom: spacing.xs,
-  },
-  pastFeaturedHandle: {
-    fontSize: typography.fontSize.xs,
-    color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    textAlign: "center",
-  },
-  pastFeaturedWeek: {
-    fontSize: 10,
-    color: colors.textSecondary,
-    marginTop: 1,
-  },
-  morePlaceholder: {
-    width: 80,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  moreText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
   },
   footerCta: {
     flexDirection: "row",

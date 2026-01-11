@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,9 @@ import {
   Image,
   Pressable,
   Alert,
+  Linking,
+  Switch,
+  ActivityIndicator,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
@@ -14,66 +17,86 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, typography } from "../../src/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
+import {
+  fetchAllAchievements,
+  fetchUserAchievements,
+  getUserStats,
+  getUserRank,
+  updateUserPrivacy,
+  getUserPrivacy,
+  checkAndAwardAchievements,
+} from "../../src/services/supabaseSync";
+import type { Achievement, UserStats } from "../../src/lib/database.types";
+import Constants from "expo-constants";
 
-// Mock stats - will come from API/database later
-const MOCK_STATS = {
-  currentStreak: 4,
-  longestStreak: 12,
-  uptimePercent: 17,
-  totalPosts: 5,
-  daysActive: 30,
-  rank: 42,
-};
+const APP_VERSION = Constants.expoConfig?.version || "1.0.0";
 
-// Achievement badges
-const ACHIEVEMENTS = [
-  {
-    id: "1",
-    icon: "flame",
-    label: "First Streak",
-    unlocked: true,
-    color: "#FF6B6B",
-  },
-  {
-    id: "2",
-    icon: "calendar",
-    label: "7 Day Streak",
-    unlocked: false,
-    color: "#4ECDC4",
-  },
-  {
-    id: "3",
-    icon: "trophy",
-    label: "Top 10",
-    unlocked: false,
-    color: "#FFE66D",
-  },
-  {
-    id: "4",
-    icon: "star",
-    label: "30 Day Streak",
-    unlocked: false,
-    color: "#A855F7",
-  },
-  {
-    id: "5",
-    icon: "rocket",
-    label: "100 Posts",
-    unlocked: false,
-    color: "#00F2EA",
-  },
-  {
-    id: "6",
-    icon: "medal",
-    label: "#1 Weekly",
-    unlocked: false,
-    color: "#FF0050",
-  },
-];
+interface AchievementDisplay {
+  id: string;
+  icon: string;
+  label: string;
+  unlocked: boolean;
+  color: string;
+}
 
 export default function ProfileScreen() {
   const { user, logout } = useAuth();
   const router = useRouter();
+
+  // Data state
+  const [isLoading, setIsLoading] = useState(true);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [userRank, setUserRank] = useState<number | null>(null);
+  const [achievements, setAchievements] = useState<AchievementDisplay[]>([]);
+  const [isPublicProfile, setIsPublicProfile] = useState(true);
+
+  // Load profile data
+  const loadProfileData = useCallback(async () => {
+    if (!user?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Fetch all data in parallel
+      const [stats, rank, allAchievements, userAchievementIds, privacy] =
+        await Promise.all([
+          getUserStats(user.id),
+          getUserRank(user.id),
+          fetchAllAchievements(),
+          fetchUserAchievements(user.id),
+          getUserPrivacy(user.id),
+        ]);
+
+      setUserStats(stats);
+      setUserRank(rank?.rankByStreak || null);
+      setIsPublicProfile(privacy ?? true);
+
+      // Map achievements to display format
+      const achievementDisplays: AchievementDisplay[] = allAchievements.map(
+        (a) => ({
+          id: a.id,
+          icon: a.icon,
+          label: a.name,
+          unlocked: userAchievementIds.includes(a.id),
+          color: a.color,
+        })
+      );
+
+      setAchievements(achievementDisplays);
+
+      // Check for new achievements after loading stats
+      await checkAndAwardAchievements(user.id);
+    } catch (error) {
+      console.error("Error loading profile data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadProfileData();
+  }, [loadProfileData]);
 
   const handleLogout = async () => {
     Alert.alert("Log Out", "Are you sure you want to log out?", [
@@ -87,6 +110,65 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handlePostingSchedule = () => {
+    router.push("/settings/posting-schedule");
+  };
+
+  const handleNotifications = () => {
+    router.push("/settings/notifications");
+  };
+
+  const handlePrivacy = async () => {
+    if (!user?.id) return;
+
+    const newValue = !isPublicProfile;
+    setIsPublicProfile(newValue); // Optimistic update
+
+    const success = await updateUserPrivacy(user.id, newValue);
+
+    if (!success) {
+      // Revert on failure
+      setIsPublicProfile(!newValue);
+      Alert.alert(
+        "Error",
+        "Failed to update privacy setting. Please try again."
+      );
+    }
+  };
+
+  const handleHelpSupport = () => {
+    Alert.alert("Help & Support", "Need help with Uptime?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Email Support",
+        onPress: () =>
+          Linking.openURL("mailto:support@uptime.app?subject=Uptime%20Support"),
+      },
+      {
+        text: "Visit Website",
+        onPress: () => Linking.openURL("https://ridhwan.io/uptime"),
+      },
+    ]);
+  };
+
+  const handleTermsOfService = () => {
+    Linking.openURL("https://ridhwan.io/uptime/terms");
+  };
+
+  const handleAbout = () => {
+    Alert.alert(
+      "About Uptime",
+      `Uptime helps TikTok creators stay consistent with daily posting.\n\nVersion: ${APP_VERSION}\nBuilt with ❤️ by ridhwan.io`,
+      [
+        { text: "OK" },
+        {
+          text: "Visit Website",
+          onPress: () => Linking.openURL("https://ridhwan.io/uptime"),
+        },
+      ]
+    );
   };
 
   return (
@@ -108,36 +190,26 @@ export default function ProfileScreen() {
                 </Text>
               </View>
             )}
-            <View style={styles.rankBadge}>
-              <Text style={styles.rankText}>#{MOCK_STATS.rank}</Text>
-            </View>
+            {userRank && (
+              <View style={styles.rankBadge}>
+                <Text style={styles.rankText}>#{userRank}</Text>
+              </View>
+            )}
           </View>
           <Text style={styles.displayName}>{user?.displayName || "User"}</Text>
           <Text style={styles.userId}>@{user?.tiktokHandle || "unknown"}</Text>
         </View>
 
-        {/* Stats Grid */}
-        <View style={styles.statsGrid}>
+        {/* Stats Row - Compact */}
+        <View style={styles.statsRow}>
           <StatCard
-            value={MOCK_STATS.currentStreak}
-            label="Current Streak"
-            icon="flame"
-            color="#FF0050"
-          />
-          <StatCard
-            value={MOCK_STATS.longestStreak}
+            value={userStats?.longest_streak || 0}
             label="Best Streak"
             icon="trophy"
             color="#FFB800"
           />
           <StatCard
-            value={`${MOCK_STATS.uptimePercent}%`}
-            label="Uptime"
-            icon="trending-up"
-            color="#00F2EA"
-          />
-          <StatCard
-            value={MOCK_STATS.totalPosts}
+            value={userStats?.total_posts || 0}
             label="Total Posts"
             icon="videocam"
             color="#A855F7"
@@ -149,22 +221,33 @@ export default function ProfileScreen() {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Achievements</Text>
             <Text style={styles.sectionSubtitle}>
-              {ACHIEVEMENTS.filter((a) => a.unlocked).length}/
-              {ACHIEVEMENTS.length} unlocked
+              {achievements.filter((a) => a.unlocked).length}/
+              {achievements.length} unlocked
             </Text>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.achievementsScroll}
-          >
-            {ACHIEVEMENTS.map((achievement) => (
-              <AchievementBadge
-                key={achievement.id}
-                achievement={achievement}
-              />
-            ))}
-          </ScrollView>
+          {isLoading ? (
+            <ActivityIndicator
+              color={colors.primary}
+              style={{ paddingVertical: spacing.md }}
+            />
+          ) : achievements.length === 0 ? (
+            <Text style={styles.noAchievementsText}>
+              No achievements available yet
+            </Text>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.achievementsScroll}
+            >
+              {achievements.map((achievement) => (
+                <AchievementBadge
+                  key={achievement.id}
+                  achievement={achievement}
+                />
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         {/* Menu Items */}
@@ -172,26 +255,20 @@ export default function ProfileScreen() {
           <MenuItem
             icon="time-outline"
             label="Posting Schedule"
-            sublabel="Daily at any time"
-            onPress={() => {}}
-          />
-          <MenuItem
-            icon="globe-outline"
-            label="Timezone"
-            sublabel="Auto-detected"
-            onPress={() => {}}
+            sublabel="Every day"
+            onPress={handlePostingSchedule}
           />
           <MenuItem
             icon="notifications-outline"
             label="Notifications"
-            sublabel="Enabled"
-            onPress={() => {}}
+            sublabel="Manage alerts"
+            onPress={handleNotifications}
           />
-          <MenuItem
+          <MenuItemToggle
             icon="shield-checkmark-outline"
-            label="Privacy"
-            sublabel="Public profile"
-            onPress={() => {}}
+            label="Public Profile"
+            value={isPublicProfile}
+            onToggle={handlePrivacy}
           />
         </View>
 
@@ -200,18 +277,18 @@ export default function ProfileScreen() {
           <MenuItem
             icon="help-circle-outline"
             label="Help & Support"
-            onPress={() => {}}
+            onPress={handleHelpSupport}
           />
           <MenuItem
             icon="document-text-outline"
             label="Terms of Service"
-            onPress={() => {}}
+            onPress={handleTermsOfService}
           />
           <MenuItem
             icon="information-circle-outline"
             label="About"
-            sublabel="Version 1.0.0"
-            onPress={() => {}}
+            sublabel={`Version ${APP_VERSION}`}
+            onPress={handleAbout}
           />
         </View>
 
@@ -258,7 +335,7 @@ function StatCard({
 function AchievementBadge({
   achievement,
 }: {
-  achievement: (typeof ACHIEVEMENTS)[0];
+  achievement: AchievementDisplay;
 }) {
   return (
     <View
@@ -323,6 +400,38 @@ function MenuItem({
   );
 }
 
+function MenuItemToggle({
+  icon,
+  label,
+  value,
+  onToggle,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <View style={styles.menuItem}>
+      <View style={styles.menuItemIcon}>
+        <Ionicons name={icon} size={20} color={colors.textSecondary} />
+      </View>
+      <View style={styles.menuItemContent}>
+        <Text style={styles.menuItemLabel}>{label}</Text>
+      </View>
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{
+          false: colors.backgroundTertiary,
+          true: colors.primary + "60",
+        }}
+        thumbColor={value ? colors.primary : colors.textSecondary}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -382,15 +491,13 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
-  statsGrid: {
+  statsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
-    marginBottom: spacing.xl,
+    marginBottom: spacing.lg,
   },
   statCard: {
     flex: 1,
-    minWidth: "45%",
     backgroundColor: colors.backgroundSecondary,
     borderRadius: 12,
     padding: spacing.md,
@@ -435,6 +542,12 @@ const styles = StyleSheet.create({
   },
   achievementsScroll: {
     gap: spacing.sm,
+  },
+  noAchievementsText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontStyle: "italic",
+    paddingVertical: spacing.md,
   },
   achievementBadge: {
     alignItems: "center",

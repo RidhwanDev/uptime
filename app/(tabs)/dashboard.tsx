@@ -11,6 +11,7 @@ import {
   Linking,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, typography } from "../../src/theme";
@@ -44,6 +45,7 @@ const openTikTokVideo = (videoId: string) => {
 
 export default function DashboardScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stats, setStats] = useState<UptimeStats | null>(null);
@@ -151,12 +153,24 @@ export default function DashboardScreen() {
                 : "Ready to post today? 🎬"}
             </Text>
           </View>
-          {user?.avatarUrl && (
-            <Image
-              source={{ uri: user.avatarUrl }}
-              style={styles.headerAvatar}
-            />
-          )}
+          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+            {user?.avatarUrl ? (
+              <Image
+                source={{ uri: user.avatarUrl }}
+                style={styles.headerAvatar}
+              />
+            ) : (
+              <View
+                style={[styles.headerAvatar, styles.headerAvatarPlaceholder]}
+              >
+                <Ionicons
+                  name="person"
+                  size={20}
+                  color={colors.textSecondary}
+                />
+              </View>
+            )}
+          </Pressable>
         </View>
 
         {error && (
@@ -475,6 +489,11 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     borderWidth: 2,
     borderColor: colors.primary,
+  },
+  headerAvatarPlaceholder: {
+    backgroundColor: colors.surfaceDark,
+    justifyContent: "center",
+    alignItems: "center",
   },
   errorCard: {
     flexDirection: "row",

@@ -9,6 +9,8 @@ import type {
   DailyPostInsert,
   LeaderboardEntry,
   UserStats,
+  Achievement,
+  UserAchievement,
 } from "../lib/database.types";
 import { TikTokVideo } from "./tiktokVideos";
 
@@ -345,5 +347,132 @@ export async function getUserDailyPosts(
   } catch (error) {
     console.error("❌ Exception fetching daily posts:", error);
     return new Set();
+  }
+}
+
+// ============================================
+// ACHIEVEMENTS
+// ============================================
+
+/**
+ * Fetch all available achievements
+ */
+export async function fetchAllAchievements(): Promise<Achievement[]> {
+  try {
+    const { data, error } = (await (supabase.from("achievements") as any)
+      .select("*")
+      .order("requirement_value", { ascending: true })) as SupabaseResponse<
+      Achievement[]
+    >;
+
+    if (error) {
+      console.error("❌ Error fetching achievements:", error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error("❌ Exception fetching achievements:", error);
+    return [];
+  }
+}
+
+/**
+ * Fetch user's earned achievements
+ */
+export async function fetchUserAchievements(
+  userId: string
+): Promise<string[]> {
+  try {
+    const { data, error } = (await (supabase.from("user_achievements") as any)
+      .select("achievement_id")
+      .eq("user_id", userId)) as SupabaseResponse<{ achievement_id: string }[]>;
+
+    if (error) {
+      console.error("❌ Error fetching user achievements:", error);
+      return [];
+    }
+
+    return data?.map((a) => a.achievement_id) || [];
+  } catch (error) {
+    console.error("❌ Exception fetching user achievements:", error);
+    return [];
+  }
+}
+
+/**
+ * Trigger achievement check for a user
+ */
+export async function checkAndAwardAchievements(userId: string): Promise<boolean> {
+  try {
+    console.log("🏅 Checking achievements for user:", userId);
+
+    const { error } = await (supabase.rpc as any)("check_and_award_achievements", {
+      p_user_id: userId,
+    });
+
+    if (error) {
+      console.error("❌ Error checking achievements:", error);
+      return false;
+    }
+
+    console.log("✅ Achievements checked successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Exception checking achievements:", error);
+    return false;
+  }
+}
+
+// ============================================
+// PRIVACY SETTINGS
+// ============================================
+
+/**
+ * Update user's public profile setting
+ */
+export async function updateUserPrivacy(
+  userId: string,
+  isPublic: boolean
+): Promise<boolean> {
+  try {
+    console.log(`🔒 Updating privacy for user ${userId}: isPublic=${isPublic}`);
+
+    const { error } = await (supabase.from("users") as any)
+      .update({ is_public: isPublic, updated_at: new Date().toISOString() })
+      .eq("id", userId);
+
+    if (error) {
+      console.error("❌ Error updating privacy:", error);
+      return false;
+    }
+
+    console.log("✅ Privacy updated successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Exception updating privacy:", error);
+    return false;
+  }
+}
+
+/**
+ * Get user's current privacy setting
+ */
+export async function getUserPrivacy(userId: string): Promise<boolean | null> {
+  try {
+    const { data, error } = (await (supabase.from("users") as any)
+      .select("is_public")
+      .eq("id", userId)
+      .single()) as SupabaseResponse<{ is_public: boolean }>;
+
+    if (error) {
+      console.error("❌ Error fetching privacy setting:", error);
+      return null;
+    }
+
+    return data?.is_public ?? true;
+  } catch (error) {
+    console.error("❌ Exception fetching privacy setting:", error);
+    return null;
   }
 }

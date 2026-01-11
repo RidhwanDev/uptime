@@ -181,30 +181,38 @@ export default function LeaderboardScreen() {
           </View>
         ) : (
           <>
-            {/* Top 3 Podium */}
-            {leaderboard.length >= 3 && (
-              <View style={styles.podium}>
-                {/* 2nd Place */}
+            {/* Top 3 Podium - show even with fewer than 3 users */}
+            <View style={styles.podium}>
+              {/* 2nd Place */}
+              {leaderboard[1] ? (
                 <PodiumItem user={leaderboard[1]} place={2} />
-                {/* 1st Place */}
-                <PodiumItem user={leaderboard[0]} place={1} />
-                {/* 3rd Place */}
+              ) : (
+                <PodiumPlaceholder place={2} />
+              )}
+              {/* 1st Place */}
+              <PodiumItem user={leaderboard[0]} place={1} />
+              {/* 3rd Place */}
+              {leaderboard[2] ? (
                 <PodiumItem user={leaderboard[2]} place={3} />
-              </View>
-            )}
+              ) : (
+                <PodiumPlaceholder place={3} />
+              )}
+            </View>
 
             {/* Rest of Leaderboard */}
-            <View style={styles.list}>
-              {leaderboard.slice(3).map((item) => (
-                <LeaderboardRow
-                  key={item.id}
-                  user={item}
-                  rank={item.rank}
-                  sortBy={sortBy}
-                  isCurrentUser={item.id === user?.id}
-                />
-              ))}
-            </View>
+            {leaderboard.length > 3 && (
+              <View style={styles.list}>
+                {leaderboard.slice(3).map((item) => (
+                  <LeaderboardRow
+                    key={item.id}
+                    user={item}
+                    rank={item.rank}
+                    sortBy={sortBy}
+                    isCurrentUser={item.id === user?.id}
+                  />
+                ))}
+              </View>
+            )}
           </>
         )}
 
@@ -260,37 +268,68 @@ function PodiumItem({
   user: LeaderboardUser;
   place: 1 | 2 | 3;
 }) {
-  const heights = { 1: 100, 2: 70, 3: 50 };
-  const gradients: Record<1 | 2 | 3, [string, string]> = {
-    1: ["#FFD700", "#FFA500"], // Gold
-    2: ["#C0C0C0", "#A0A0A0"], // Silver
-    3: ["#CD7F32", "#8B4513"], // Bronze
+  const ringColors: Record<1 | 2 | 3, string> = {
+    1: "#FFD700", // Gold
+    2: "#C0C0C0", // Silver
+    3: "#CD7F32", // Bronze
   };
-  const avatarSizes = { 1: 56, 2: 48, 3: 44 };
+  const avatarSizes = { 1: 80, 2: 64, 3: 64 };
+  const ringWidth = { 1: 4, 2: 3, 3: 3 };
+  const placeLabels = { 1: "1st", 2: "2nd", 3: "3rd" };
 
   return (
     <View style={[styles.podiumItem, place === 1 && styles.podiumItemFirst]}>
-      {/* Avatar */}
+      {/* Place Badge */}
+      <View style={[styles.placeBadge, { backgroundColor: ringColors[place] }]}>
+        <Text style={styles.placeBadgeText}>{placeLabels[place]}</Text>
+      </View>
+
+      {/* Avatar with Chrome Ring */}
       <View style={styles.podiumAvatarContainer}>
-        {user.avatarUrl ? (
-          <Image
-            source={{ uri: user.avatarUrl }}
-            style={[
-              styles.podiumAvatar,
-              { width: avatarSizes[place], height: avatarSizes[place] },
-            ]}
-          />
-        ) : (
-          <View
-            style={[
-              styles.podiumAvatar,
-              styles.podiumAvatarPlaceholder,
-              { width: avatarSizes[place], height: avatarSizes[place] },
-            ]}
-          >
-            <Ionicons name="person" size={20} color={colors.textSecondary} />
-          </View>
-        )}
+        {/* Outer glow for 1st place */}
+        {place === 1 && <View style={styles.avatarGlow} />}
+        
+        {/* Chrome ring */}
+        <LinearGradient
+          colors={[ringColors[place], ringColors[place] + "80", ringColors[place]]}
+          style={[
+            styles.avatarRing,
+            {
+              width: avatarSizes[place] + ringWidth[place] * 2 + 4,
+              height: avatarSizes[place] + ringWidth[place] * 2 + 4,
+              borderRadius: (avatarSizes[place] + ringWidth[place] * 2 + 4) / 2,
+            },
+          ]}
+        >
+          {user.avatarUrl ? (
+            <Image
+              source={{ uri: user.avatarUrl }}
+              style={[
+                styles.podiumAvatar,
+                {
+                  width: avatarSizes[place],
+                  height: avatarSizes[place],
+                  borderRadius: avatarSizes[place] / 2,
+                },
+              ]}
+            />
+          ) : (
+            <View
+              style={[
+                styles.podiumAvatar,
+                styles.podiumAvatarPlaceholder,
+                {
+                  width: avatarSizes[place],
+                  height: avatarSizes[place],
+                  borderRadius: avatarSizes[place] / 2,
+                },
+              ]}
+            >
+              <Ionicons name="person" size={place === 1 ? 28 : 22} color={colors.textSecondary} />
+            </View>
+          )}
+        </LinearGradient>
+
         {/* Crown for 1st place */}
         {place === 1 && <Text style={styles.crown}>👑</Text>}
       </View>
@@ -300,19 +339,64 @@ function PodiumItem({
         @{user.handle}
       </Text>
 
-      {/* Streak */}
-      <View style={styles.podiumStreakContainer}>
-        <Text style={styles.podiumStreak}>{user.currentStreak}</Text>
-        <Ionicons name="flame" size={12} color={colors.primary} />
+      {/* Stats */}
+      <View style={styles.podiumStats}>
+        <View style={styles.podiumStatItem}>
+          <Ionicons name="flame" size={14} color={colors.primary} />
+          <Text style={styles.podiumStatValue}>{user.currentStreak}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function PodiumPlaceholder({ place }: { place: 2 | 3 }) {
+  const avatarSizes = { 2: 64, 3: 64 };
+  const placeLabels = { 2: "2nd", 3: "3rd" };
+  const ringColors = { 2: "#C0C0C0", 3: "#CD7F32" };
+
+  return (
+    <View style={styles.podiumItem}>
+      {/* Place Badge */}
+      <View style={[styles.placeBadge, styles.placeBadgeEmpty]}>
+        <Text style={styles.placeBadgeTextEmpty}>{placeLabels[place]}</Text>
       </View>
 
-      {/* Pedestal */}
-      <LinearGradient
-        colors={gradients[place]}
-        style={[styles.pedestal, { height: heights[place] }]}
-      >
-        <Text style={styles.pedestalNumber}>{place}</Text>
-      </LinearGradient>
+      {/* Empty Avatar */}
+      <View style={styles.podiumAvatarContainer}>
+        <View
+          style={[
+            styles.avatarRingEmpty,
+            {
+              width: avatarSizes[place] + 10,
+              height: avatarSizes[place] + 10,
+              borderRadius: (avatarSizes[place] + 10) / 2,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.podiumAvatar,
+              styles.podiumAvatarEmpty,
+              {
+                width: avatarSizes[place],
+                height: avatarSizes[place],
+                borderRadius: avatarSizes[place] / 2,
+              },
+            ]}
+          >
+            <Ionicons name="person-add" size={20} color={colors.textTertiary} />
+          </View>
+        </View>
+      </View>
+
+      {/* Waiting text */}
+      <Text style={styles.podiumHandleEmpty}>Waiting...</Text>
+
+      {/* Empty stats */}
+      <View style={styles.podiumStats}>
+        <Text style={styles.podiumStatEmpty}>—</Text>
+      </View>
     </View>
   );
 }
@@ -479,68 +563,123 @@ const styles = StyleSheet.create({
   podium: {
     flexDirection: "row",
     justifyContent: "center",
-    alignItems: "flex-end",
+    alignItems: "flex-start",
     marginBottom: spacing.xl,
-    gap: spacing.sm,
+    paddingTop: spacing.md,
   },
   podiumItem: {
     alignItems: "center",
     flex: 1,
+    paddingHorizontal: spacing.xs,
   },
   podiumItemFirst: {
-    marginBottom: spacing.sm,
+    marginTop: -spacing.md,
+  },
+  placeBadge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: 10,
+    marginBottom: spacing.xs,
+  },
+  placeBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: "#000",
+  },
+  placeBadgeEmpty: {
+    backgroundColor: colors.backgroundTertiary,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  placeBadgeTextEmpty: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: colors.textTertiary,
   },
   podiumAvatarContainer: {
     position: "relative",
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  avatarGlow: {
+    position: "absolute",
+    top: -4,
+    left: -4,
+    right: -4,
+    bottom: -4,
+    borderRadius: 100,
+    backgroundColor: "#FFD700",
+    opacity: 0.3,
+  },
+  avatarRing: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 3,
+  },
+  avatarRingEmpty: {
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: colors.border,
+    borderStyle: "dashed",
   },
   podiumAvatar: {
-    borderRadius: 100,
-    borderWidth: 3,
-    borderColor: colors.primary,
+    borderWidth: 2,
+    borderColor: colors.background,
   },
   podiumAvatarPlaceholder: {
     backgroundColor: colors.surfaceDark,
     justifyContent: "center",
     alignItems: "center",
   },
+  podiumAvatarEmpty: {
+    backgroundColor: colors.backgroundTertiary,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   crown: {
     position: "absolute",
-    top: -16,
+    top: -20,
     left: "50%",
-    marginLeft: -10,
-    fontSize: 20,
+    marginLeft: -12,
+    fontSize: 24,
   },
   podiumHandle: {
-    fontSize: typography.fontSize.xs,
+    fontSize: typography.fontSize.sm,
     color: colors.text,
-    fontWeight: typography.fontWeight.medium,
-    marginBottom: 2,
-    maxWidth: 80,
+    fontWeight: typography.fontWeight.semibold,
+    marginBottom: spacing.xs,
+    maxWidth: 90,
     textAlign: "center",
   },
-  podiumStreakContainer: {
+  podiumHandleEmpty: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textTertiary,
+    fontWeight: typography.fontWeight.medium,
+    marginBottom: spacing.xs,
+    fontStyle: "italic",
+  },
+  podiumStats: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
-    marginBottom: spacing.xs,
+    gap: spacing.xs,
   },
-  podiumStreak: {
+  podiumStatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: 12,
+  },
+  podiumStatValue: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.bold,
     color: colors.text,
   },
-  pedestal: {
-    width: "100%",
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  pedestalNumber: {
-    fontSize: typography.fontSize["2xl"],
-    fontWeight: typography.fontWeight.bold,
-    color: "#000",
+  podiumStatEmpty: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textTertiary,
   },
   list: {
     gap: spacing.sm,

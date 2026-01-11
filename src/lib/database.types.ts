@@ -12,6 +12,7 @@ export interface Database {
           display_name: string | null;
           avatar_url: string | null;
           timezone: string | null;
+          is_public: boolean;
           access_token: string | null;
           refresh_token: string | null;
           token_expires_at: string | null;
@@ -26,6 +27,7 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           timezone?: string | null;
+          is_public?: boolean;
           access_token?: string | null;
           refresh_token?: string | null;
           token_expires_at?: string | null;
@@ -40,6 +42,7 @@ export interface Database {
           display_name?: string | null;
           avatar_url?: string | null;
           timezone?: string | null;
+          is_public?: boolean;
           access_token?: string | null;
           refresh_token?: string | null;
           token_expires_at?: string | null;
@@ -135,6 +138,58 @@ export interface Database {
           created_at?: string;
         };
       };
+      achievements: {
+        Row: {
+          id: string;
+          name: string;
+          description: string;
+          icon: string;
+          color: string;
+          requirement_type: string;
+          requirement_value: number;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          name: string;
+          description: string;
+          icon: string;
+          color: string;
+          requirement_type: string;
+          requirement_value: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          description?: string;
+          icon?: string;
+          color?: string;
+          requirement_type?: string;
+          requirement_value?: number;
+          created_at?: string;
+        };
+      };
+      user_achievements: {
+        Row: {
+          id: string;
+          user_id: string;
+          achievement_id: string;
+          earned_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          achievement_id: string;
+          earned_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          achievement_id?: string;
+          earned_at?: string;
+        };
+      };
     };
     Views: {
       leaderboard: {
@@ -142,7 +197,9 @@ export interface Database {
           id: string;
           tiktok_user_id: string;
           tiktok_handle: string | null;
+          display_name: string | null;
           avatar_url: string | null;
+          is_public: boolean;
           current_streak: number;
           longest_streak: number;
           uptime_30d: number;
@@ -173,3 +230,11 @@ export type DailyPostInsert =
 export type UserStats = Database["public"]["Tables"]["user_stats"]["Row"];
 export type LeaderboardEntry =
   Database["public"]["Views"]["leaderboard"]["Row"];
+export type Achievement = Database["public"]["Tables"]["achievements"]["Row"];
+export type UserAchievement =
+  Database["public"]["Tables"]["user_achievements"]["Row"];
+
+// Extended type for user achievements with achievement details
+export interface UserAchievementWithDetails extends UserAchievement {
+  achievement: Achievement;
+}
