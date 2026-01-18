@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import PagerView from "react-native-pager-view";
 import { colors, spacing, typography } from "../../src/theme";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { fetchLeaderboard, getUserRank } from "../../src/services/supabaseSync";
@@ -32,22 +33,23 @@ interface LeaderboardUser {
 
 export default function LeaderboardScreen() {
   const { user } = useAuth();
-  const [sortBy, setSortBy] = useState<SortOption>("streak");
   const [leaderboard, setLeaderboard] = useState<LeaderboardUser[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [currentUserRank, setCurrentUserRank] = useState<number | null>(null);
   const [currentUserStats, setCurrentUserStats] = useState<LeaderboardUser | null>(null);
+  const pagerRef = useRef<PagerView>(null);
+  const [activePage, setActivePage] = useState(0);
 
   const loadLeaderboard = useCallback(async () => {
     try {
-      const sortType = sortBy === "posts" ? "streak" : sortBy; // API only supports streak/uptime
-      const data = await fetchLeaderboard(sortType, 20);
+      // Load data sorted by streak (API supports streak/uptime)
+      const data = await fetchLeaderboard("streak", 20);
       
       // Transform data to our format
-      const transformed: LeaderboardUser[] = data.map((entry, index) => ({
+      const transformed: LeaderboardUser[] = data.map((entry) => ({
         id: entry.id,
-        rank: sortBy === "streak" ? entry.rank_by_streak : entry.rank_by_uptime,
+        rank: entry.rank_by_streak,
         handle: entry.tiktok_handle || "Unknown",
         avatarUrl: entry.avatar_url || "",
         currentStreak: entry.current_streak,
@@ -55,30 +57,11 @@ export default function LeaderboardScreen() {
         totalPosts: entry.total_posts,
       }));
 
-      // Sort locally if needed
-      const sorted = [...transformed].sort((a, b) => {
-        switch (sortBy) {
-          case "streak":
-            return b.currentStreak - a.currentStreak;
-          case "uptime":
-            return b.uptimePercent - a.uptimePercent;
-          case "posts":
-            return b.totalPosts - a.totalPosts;
-          default:
-            return 0;
-        }
-      });
-
-      // Re-assign ranks after local sort
-      sorted.forEach((item, index) => {
-        item.rank = index + 1;
-      });
-
-      setLeaderboard(sorted);
+      setLeaderboard(transformed);
 
       // Find current user in leaderboard
       if (user?.id) {
-        const userEntry = sorted.find(e => e.id === user.id);
+        const userEntry = transformed.find(e => e.id === user.id);
         if (userEntry) {
           setCurrentUserRank(userEntry.rank);
           setCurrentUserStats(userEntry);
@@ -86,7 +69,7 @@ export default function LeaderboardScreen() {
           // Get rank from API if not in top results
           const rank = await getUserRank(user.id);
           if (rank) {
-            setCurrentUserRank(sortBy === "streak" ? rank.rankByStreak : rank.rankByUptime);
+            setCurrentUserRank(rank.rankByStreak);
           }
         }
       }
@@ -96,7 +79,7 @@ export default function LeaderboardScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [sortBy, user?.id]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadLeaderboard();
@@ -106,6 +89,14 @@ export default function LeaderboardScreen() {
     setIsRefreshing(true);
     loadLeaderboard();
   }, [loadLeaderboard]);
+
+  const handlePageChange = (page: number) => {
+    setActivePage(page);
+  };
+
+  const handleTabPress = (index: number) => {
+    pagerRef.current?.setPage(index);
+  };
 
   // Current user entry for display
   const currentUserEntry: LeaderboardUser = currentUserStats || {
@@ -134,130 +125,235 @@ export default function LeaderboardScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            tintColor={colors.primary}
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Leaderboard</Text>
+        <Text style={styles.subtitle}>Top creators by consistency</Text>
+      </View>
+
+      {/* Tab Indicators */}
+      <View style={styles.tabContainer}>
+        <Pressable
+          style={[styles.tab, activePage === 0 && styles.tabActive]}
+          onPress={() => handleTabPress(0)}
+        >
+          <Ionicons
+            name="flame"
+            size={16}
+            color={activePage === 0 ? colors.primary : colors.textSecondary}
           />
-        }
+          <Text
+            style={[
+              styles.tabLabel,
+              activePage === 0 && styles.tabLabelActive,
+            ]}
+          >
+            Streak
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, activePage === 1 && styles.tabActive]}
+          onPress={() => handleTabPress(1)}
+        >
+          <Ionicons
+            name="trending-up"
+            size={16}
+            color={activePage === 1 ? colors.primary : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              activePage === 1 && styles.tabLabelActive,
+            ]}
+          >
+            Uptime
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.tab, activePage === 2 && styles.tabActive]}
+          onPress={() => handleTabPress(2)}
+        >
+          <Ionicons
+            name="videocam"
+            size={16}
+            color={activePage === 2 ? colors.primary : colors.textSecondary}
+          />
+          <Text
+            style={[
+              styles.tabLabel,
+              activePage === 2 && styles.tabLabelActive,
+            ]}
+          >
+            Posts
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Swipeable Pager View */}
+      <PagerView
+        ref={pagerRef}
+        style={styles.pager}
+        initialPage={0}
+        onPageSelected={(e) => handlePageChange(e.nativeEvent.position)}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Leaderboard</Text>
-          <Text style={styles.subtitle}>Top creators by consistency</Text>
-        </View>
+        {/* Streak View */}
+        <LeaderboardView
+          key="streak"
+          sortBy="streak"
+          leaderboard={leaderboard}
+          currentUserEntry={currentUserEntry}
+          user={user}
+          isLoading={isLoading}
+          isRefreshing={isRefreshing}
+          onRefresh={onRefresh}
+        />
 
-        {/* Sort Options */}
-        <View style={styles.sortContainer}>
-          <SortButton
-            label="Streak"
-            icon="flame"
-            active={sortBy === "streak"}
-            onPress={() => setSortBy("streak")}
-          />
-          <SortButton
-            label="Uptime"
-            icon="trending-up"
-            active={sortBy === "uptime"}
-            onPress={() => setSortBy("uptime")}
-          />
-          <SortButton
-            label="Posts"
-            icon="videocam"
-            active={sortBy === "posts"}
-            onPress={() => setSortBy("posts")}
-          />
-        </View>
+        {/* Uptime View */}
+        <LeaderboardView
+          key="uptime"
+          sortBy="uptime"
+          leaderboard={leaderboard}
+          currentUserEntry={currentUserEntry}
+          user={user}
+          isLoading={isLoading}
+          isRefreshing={isRefreshing}
+          onRefresh={onRefresh}
+        />
 
-        {leaderboard.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="trophy-outline" size={48} color={colors.textSecondary} />
-            <Text style={styles.emptyText}>No data yet</Text>
-            <Text style={styles.emptySubtext}>Be the first on the leaderboard!</Text>
-          </View>
-        ) : (
-          <>
-            {/* Top 3 Podium - show even with fewer than 3 users */}
-            <View style={styles.podium}>
-              {/* 2nd Place */}
-              {leaderboard[1] ? (
-                <PodiumItem user={leaderboard[1]} place={2} />
-              ) : (
-                <PodiumPlaceholder place={2} />
-              )}
-              {/* 1st Place */}
-              <PodiumItem user={leaderboard[0]} place={1} />
-              {/* 3rd Place */}
-              {leaderboard[2] ? (
-                <PodiumItem user={leaderboard[2]} place={3} />
-              ) : (
-                <PodiumPlaceholder place={3} />
-              )}
-            </View>
-
-            {/* Rest of Leaderboard */}
-            {leaderboard.length > 3 && (
-              <View style={styles.list}>
-                {leaderboard.slice(3).map((item) => (
-                  <LeaderboardRow
-                    key={item.id}
-                    user={item}
-                    rank={item.rank}
-                    sortBy={sortBy}
-                    isCurrentUser={item.id === user?.id}
-                  />
-                ))}
-              </View>
-            )}
-          </>
-        )}
-
-        {/* Current User Position */}
-        {currentUserEntry.rank > 0 && (
-          <View style={styles.currentUserSection}>
-            <Text style={styles.currentUserLabel}>Your Position</Text>
-            <LeaderboardRow
-              user={currentUserEntry}
-              rank={currentUserEntry.rank}
-              sortBy={sortBy}
-              isCurrentUser
-            />
-          </View>
-        )}
-      </ScrollView>
+        {/* Posts View */}
+        <LeaderboardView
+          key="posts"
+          sortBy="posts"
+          leaderboard={leaderboard}
+          currentUserEntry={currentUserEntry}
+          user={user}
+          isLoading={isLoading}
+          isRefreshing={isRefreshing}
+          onRefresh={onRefresh}
+        />
+      </PagerView>
     </View>
   );
 }
 
-function SortButton({
-  label,
-  icon,
-  active,
-  onPress,
+// LeaderboardView component for each swipeable page
+function LeaderboardView({
+  sortBy,
+  leaderboard,
+  currentUserEntry,
+  user,
+  isLoading,
+  isRefreshing,
+  onRefresh,
 }: {
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  active: boolean;
-  onPress: () => void;
+  sortBy: SortOption;
+  leaderboard: LeaderboardUser[];
+  currentUserEntry: LeaderboardUser;
+  user: { id?: string } | null;
+  isLoading: boolean;
+  isRefreshing: boolean;
+  onRefresh: () => void;
 }) {
+  // Sort leaderboard by the specified sort type
+  const sorted = [...leaderboard].sort((a, b) => {
+    switch (sortBy) {
+      case "streak":
+        return b.currentStreak - a.currentStreak;
+      case "uptime":
+        return b.uptimePercent - a.uptimePercent;
+      case "posts":
+        return b.totalPosts - a.totalPosts;
+      default:
+        return 0;
+    }
+  });
+
+  // Re-assign ranks after sort
+  sorted.forEach((item, index) => {
+    item.rank = index + 1;
+  });
+
+  // Get current user entry with correct rank for this sort
+  const userEntry = sorted.find((e) => e.id === user?.id);
+  const displayUserEntry: LeaderboardUser = userEntry || {
+    ...currentUserEntry,
+    rank: 0,
+  };
+
+  if (isLoading && sorted.length === 0) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading leaderboard...</Text>
+      </View>
+    );
+  }
+
   return (
-    <Pressable
-      style={[styles.sortButton, active && styles.sortButtonActive]}
-      onPress={onPress}
+    <ScrollView
+      contentContainerStyle={styles.content}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={onRefresh}
+          tintColor={colors.primary}
+        />
+      }
     >
-      <Ionicons
-        name={icon}
-        size={14}
-        color={active ? colors.text : colors.textSecondary}
-      />
-      <Text style={[styles.sortButtonText, active && styles.sortButtonTextActive]}>
-        {label}
-      </Text>
-    </Pressable>
+      {sorted.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="trophy-outline" size={48} color={colors.textSecondary} />
+          <Text style={styles.emptyText}>No data yet</Text>
+          <Text style={styles.emptySubtext}>Be the first on the leaderboard!</Text>
+        </View>
+      ) : (
+        <>
+          {/* Top 3 Podium */}
+          <View style={styles.podium}>
+            {sorted[1] ? (
+              <PodiumItem user={sorted[1]} place={2} />
+            ) : (
+              <PodiumPlaceholder place={2} />
+            )}
+            <PodiumItem user={sorted[0]} place={1} />
+            {sorted[2] ? (
+              <PodiumItem user={sorted[2]} place={3} />
+            ) : (
+              <PodiumPlaceholder place={3} />
+            )}
+          </View>
+
+          {/* Rest of Leaderboard */}
+          {sorted.length > 3 && (
+            <View style={styles.list}>
+              {sorted.slice(3).map((item) => (
+                <LeaderboardRow
+                  key={item.id}
+                  user={item}
+                  rank={item.rank}
+                  sortBy={sortBy}
+                  isCurrentUser={item.id === user?.id}
+                />
+              ))}
+            </View>
+          )}
+        </>
+      )}
+
+      {/* Current User Position */}
+      {displayUserEntry.rank > 0 && (
+        <View style={styles.currentUserSection}>
+          <Text style={styles.currentUserLabel}>Your Position</Text>
+          <LeaderboardRow
+            user={displayUserEntry}
+            rank={displayUserEntry.rank}
+            sortBy={sortBy}
+            isCurrentUser
+          />
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
@@ -522,6 +618,8 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
   },
   title: {
     fontSize: typography.fontSize["2xl"],
@@ -532,6 +630,38 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  tabContainer: {
+    flexDirection: "row",
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: spacing.md,
+    marginHorizontal: spacing.lg,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+  },
+  tabActive: {
+    backgroundColor: colors.primary + "30",
+  },
+  tabLabel: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  tabLabelActive: {
+    color: colors.primary,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  pager: {
+    flex: 1,
   },
   sortContainer: {
     flexDirection: "row",

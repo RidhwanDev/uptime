@@ -4,6 +4,10 @@ import * as Linking from "expo-linking";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
+const PKCE_STORAGE_KEY = "tiktok_pkce_code_verifier";
+const PKCE_STATE_KEY = "tiktok_pkce_state";
+const PKCE_REDIRECT_URI_KEY = "tiktok_pkce_redirect_uri";
+
 // Complete the web browser session when done
 WebBrowser.maybeCompleteAuthSession();
 
@@ -41,9 +45,56 @@ const getRedirectUri = (): string => {
   // }
 };
 
-// Store PKCE values for auth flow
+// Store PKCE values for auth flow (in-memory and persistent)
 let storedCodeVerifier: string | null = null;
 let storedState: string | null = null;
+
+// Store PKCE values persistently for deep link handling
+async function storePKCEValues(
+  codeVerifier: string,
+  state: string,
+  redirectUri: string
+): Promise<void> {
+  try {
+    storedCodeVerifier = codeVerifier;
+    storedState = state;
+    await SecureStore.setItemAsync(PKCE_STORAGE_KEY, codeVerifier);
+    await SecureStore.setItemAsync(PKCE_STATE_KEY, state);
+    await SecureStore.setItemAsync(PKCE_REDIRECT_URI_KEY, redirectUri);
+  } catch (error) {
+    console.error("Error storing PKCE values:", error);
+  }
+}
+
+// Load PKCE values from storage
+async function loadPKCEValues(): Promise<{
+  codeVerifier: string | null;
+  state: string | null;
+  redirectUri: string | null;
+}> {
+  try {
+    const codeVerifier = await SecureStore.getItemAsync(PKCE_STORAGE_KEY);
+    const state = await SecureStore.getItemAsync(PKCE_STATE_KEY);
+    const redirectUri = await SecureStore.getItemAsync(PKCE_REDIRECT_URI_KEY);
+    return { codeVerifier, state, redirectUri };
+  } catch (error) {
+    console.error("Error loading PKCE values:", error);
+    return { codeVerifier: null, state: null, redirectUri: null };
+  }
+}
+
+// Clear PKCE values
+async function clearPKCEValues(): Promise<void> {
+  try {
+    storedCodeVerifier = null;
+    storedState = null;
+    await SecureStore.deleteItemAsync(PKCE_STORAGE_KEY);
+    await SecureStore.deleteItemAsync(PKCE_STATE_KEY);
+    await SecureStore.deleteItemAsync(PKCE_REDIRECT_URI_KEY);
+  } catch (error) {
+    console.error("Error clearing PKCE values:", error);
+  }
+}
 
 // Log configuration for debugging
 const REDIRECT_URI = getRedirectUri();
@@ -127,9 +178,8 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
 
-    // Store for auth completion
-    storedCodeVerifier = codeVerifier;
-    storedState = state;
+    // Store for auth completion (in-memory and persistent)
+    await storePKCEValues(codeVerifier, state, redirectUri);
 
     // Step 3: Build authorization URL
     // TikTok uses client_key instead of client_id
@@ -237,6 +287,8 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     }
 
     if (!redirectUrl) {
+      // Clear PKCE values on cancellation
+      await clearPKCEValues();
       return {
         success: false,
         error: "Authentication was cancelled or failed. Please try again.",
@@ -315,17 +367,105 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     console.log("✅ Authorization code received");
 
     // Step 6: Exchange code for access token
-    return await exchangeCodeForToken(code, codeVerifier, redirectUri);
+    const result = await exchangeCodeForToken(code, codeVerifier, redirectUri);
+
+    // Clear PKCE values after auth attempt (success or failure)
+    await clearPKCEValues();
+
+    return result;
   } catch (error) {
     console.error("❌ TikTok authentication error:", error);
+    // Clear PKCE values on error
+    await clearPKCEValues();
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",
     };
-  } finally {
-    // Clear stored values
-    storedCodeVerifier = null;
-    storedState = null;
+  }
+}
+
+/**
+ * Complete authentication using a callback URL
+ * This is used when the app is opened via deep link
+ */
+export async function completeAuthWithUrl(
+  callbackUrl: string
+): Promise<AuthResult> {
+  try {
+    console.log("🔗 Completing auth with callback URL:", callbackUrl);
+
+    // Load PKCE values from storage
+    const { codeVerifier, state, redirectUri } = await loadPKCEValues();
+
+    if (!codeVerifier || !redirectUri) {
+      return {
+        success: false,
+        error:
+          "Session expired. Please tap 'Log in with TikTok' again to start a new session.",
+      };
+    }
+
+    // Parse the callback URL
+    let code: string | null = null;
+    let returnedState: string | null = null;
+    let error: string | null = null;
+
+    try {
+      const parsedUrl = new URL(callbackUrl);
+      code = parsedUrl.searchParams.get("code");
+      returnedState = parsedUrl.searchParams.get("state");
+      error = parsedUrl.searchParams.get("error");
+    } catch {
+      // If URL parsing fails, try regex extraction
+      const codeMatch = callbackUrl.match(/[?&]code=([^&]+)/);
+      const stateMatch = callbackUrl.match(/[?&]state=([^&]+)/);
+      const errorMatch = callbackUrl.match(/[?&]error=([^&]+)/);
+
+      code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
+      returnedState = stateMatch ? decodeURIComponent(stateMatch[1]) : null;
+      error = errorMatch ? decodeURIComponent(errorMatch[1]) : null;
+    }
+
+    if (error) {
+      await clearPKCEValues();
+      return {
+        success: false,
+        error: decodeURIComponent(error) || "Authorization failed",
+      };
+    }
+
+    if (!code) {
+      await clearPKCEValues();
+      return { success: false, error: "No authorization code received" };
+    }
+
+    // Verify state matches (CSRF protection)
+    if (state && returnedState && returnedState !== state) {
+      console.warn("⚠️ State mismatch:", {
+        expected: state,
+        received: returnedState,
+      });
+      await clearPKCEValues();
+      return {
+        success: false,
+        error: "State mismatch - possible CSRF attack",
+      };
+    }
+
+    // Exchange code for token
+    const result = await exchangeCodeForToken(code, codeVerifier, redirectUri);
+
+    // Clear PKCE values after successful or failed auth
+    await clearPKCEValues();
+
+    return result;
+  } catch (error) {
+    console.error("❌ Error completing auth:", error);
+    await clearPKCEValues();
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error occurred",
+    };
   }
 }
 

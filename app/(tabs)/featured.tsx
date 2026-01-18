@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,11 +6,17 @@ import {
   ScrollView,
   Image,
   Pressable,
+  Alert,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { colors, spacing, typography } from "../../src/theme";
+import {
+  requestPermissions,
+  getNotificationPreferences,
+  updateNotificationSchedules,
+} from "../../src/services/notifications";
 
 // Coming soon interview teasers
 const UPCOMING_INTERVIEWS = [
@@ -41,6 +47,39 @@ const UPCOMING_INTERVIEWS = [
 ];
 
 export default function FeaturedScreen() {
+  const [isNotifying, setIsNotifying] = useState(false);
+
+  const handleNotifyMe = async () => {
+    try {
+      setIsNotifying(true);
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        Alert.alert(
+          "Permission Required",
+          "Please enable notifications in your device settings to be notified when interviews launch.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
+      // Enable featured content notifications
+      const prefs = await getNotificationPreferences();
+      prefs.featured_content = true;
+      await updateNotificationSchedules(prefs);
+
+      Alert.alert(
+        "Notifications Enabled",
+        "You'll be notified when new creator interviews are released!",
+        [{ text: "OK" }]
+      );
+    } catch (error) {
+      console.error("Error enabling notifications:", error);
+      Alert.alert("Error", "Failed to enable notifications. Please try again.");
+    } finally {
+      setIsNotifying(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
@@ -129,9 +168,17 @@ export default function FeaturedScreen() {
           </View>
 
           {/* Notify Me */}
-          <Pressable style={styles.notifyButton}>
+          <Pressable
+            style={styles.notifyButton}
+            onPress={handleNotifyMe}
+            disabled={isNotifying}
+          >
             <Ionicons name="notifications-outline" size={18} color={colors.text} />
-            <Text style={styles.notifyButtonText}>Notify me when interviews launch</Text>
+            <Text style={styles.notifyButtonText}>
+              {isNotifying
+                ? "Enabling..."
+                : "Notify me when interviews launch"}
+            </Text>
           </Pressable>
         </View>
 

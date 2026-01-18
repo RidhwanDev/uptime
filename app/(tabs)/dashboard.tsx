@@ -23,6 +23,8 @@ import {
   TikTokVideo,
 } from "../../src/services/tiktokVideos";
 import { fullSyncForUser } from "../../src/services/supabaseSync";
+import { checkBadgeAchievements } from "../../src/services/notifications";
+import * as SecureStore from "expo-secure-store";
 
 // Open video in TikTok app or browser
 const openTikTokVideo = (videoId: string) => {
@@ -51,6 +53,9 @@ export default function DashboardScreen() {
   const [stats, setStats] = useState<UptimeStats | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Store previous stats for achievement comparison
+  const PREV_STATS_KEY = "previous_stats";
+
   const loadVideos = useCallback(async () => {
     if (!user) {
       setError("Not authenticated");
@@ -71,6 +76,33 @@ export default function DashboardScreen() {
       const videos = await fetchAllUserVideos(accessToken, 100);
       const uptimeStats = calculateUptimeStats(videos, 30);
       setStats(uptimeStats);
+
+      // Check for badge achievements
+      try {
+        const prevStatsStr = await SecureStore.getItemAsync(PREV_STATS_KEY);
+        const prevStats = prevStatsStr ? JSON.parse(prevStatsStr) : null;
+
+        await checkBadgeAchievements(
+          uptimeStats.currentStreak || 0,
+          uptimeStats.uptimePercentage || 0,
+          videos.length,
+          prevStats?.currentStreak,
+          prevStats?.uptimePercentage,
+          prevStats?.totalPosts
+        );
+
+        // Save current stats as previous for next time
+        await SecureStore.setItemAsync(
+          PREV_STATS_KEY,
+          JSON.stringify({
+            currentStreak: uptimeStats.currentStreak || 0,
+            uptimePercentage: uptimeStats.uptimePercentage || 0,
+            totalPosts: videos.length,
+          })
+        );
+      } catch (error) {
+        console.error("Error checking badge achievements:", error);
+      }
 
       // Sync to Supabase in background (non-blocking)
       if (user.id && videos.length > 0) {
@@ -303,20 +335,26 @@ export default function DashboardScreen() {
 }
 
 // Generate calendar grid with proper week alignment
+// Shows 4 weeks back from today, plus the rest of the current week
 function generateCalendarWeeks(numWeeks: number): string[][] {
   const weeks: string[][] = [];
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  // Start from the beginning of the week, numWeeks ago
-  const startDate = new Date(today);
-  startDate.setDate(startDate.getDate() - numWeeks * 7 + (7 - today.getDay()));
+  // Find the start of the week (Sunday) for the first week we want to show
+  // Go back (numWeeks - 1) weeks from today, then find the Sunday of that week
+  const firstWeekStart = new Date(today);
+  const daysFromSunday = today.getDay(); // 0 = Sunday, 6 = Saturday
+  firstWeekStart.setDate(today.getDate() - (numWeeks - 1) * 7 - daysFromSunday);
 
+  // Generate weeks
   for (let week = 0; week < numWeeks; week++) {
     const weekDays: string[] = [];
     for (let day = 0; day < 7; day++) {
-      const date = new Date(startDate);
-      date.setDate(date.getDate() + week * 7 + day);
-      weekDays.push(date.toISOString().split("T")[0]);
+      const date = new Date(firstWeekStart);
+      date.setDate(firstWeekStart.getDate() + week * 7 + day);
+      const dateStr = date.toISOString().split("T")[0];
+      weekDays.push(dateStr);
     }
     weeks.push(weekDays);
   }
@@ -333,7 +371,7 @@ function StreakCalendar({
   daysPosted: number;
   totalDays: number;
 }) {
-  const weeks = generateCalendarWeeks(3);
+  const weeks = generateCalendarWeeks(4);
   const today = new Date().toISOString().split("T")[0];
   const dayLabels = ["S", "M", "T", "W", "T", "F", "S"];
 
@@ -341,7 +379,7 @@ function StreakCalendar({
     <View style={styles.calendarContainer}>
       <View style={styles.calendarHeader}>
         <Text style={styles.calendarTitle}>Activity</Text>
-        <Text style={styles.calendarSubtitle}>Last 3 weeks</Text>
+        <Text style={styles.calendarSubtitle}>Last 4 weeks</Text>
       </View>
 
       {/* Day labels */}

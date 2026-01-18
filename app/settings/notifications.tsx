@@ -1,9 +1,14 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Switch } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, ScrollView, Switch, Alert } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, spacing, typography } from "../../src/theme";
+import {
+  getNotificationPreferences,
+  updateNotificationSchedules,
+  requestPermissions,
+} from "../../src/services/notifications";
 
 interface NotificationSetting {
   id: string;
@@ -49,13 +54,66 @@ export default function NotificationsScreen() {
       enabled: false,
     },
   ]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const toggleSetting = (id: string) => {
-    setSettings((prev) =>
-      prev.map((setting) =>
-        setting.id === id ? { ...setting, enabled: !setting.enabled } : setting
-      )
+  // Load preferences on mount
+  useEffect(() => {
+    loadPreferences();
+  }, []);
+
+  const loadPreferences = async () => {
+    try {
+      const prefs = await getNotificationPreferences();
+      setSettings((prev) =>
+        prev.map((setting) => ({
+          ...setting,
+          enabled: prefs[setting.id as keyof typeof prefs] ?? setting.enabled,
+        }))
+      );
+    } catch (error) {
+      console.error("Error loading preferences:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleSetting = async (id: string) => {
+    const newSettings = settings.map((setting) =>
+      setting.id === id ? { ...setting, enabled: !setting.enabled } : setting
     );
+    setSettings(newSettings);
+
+    // Request permissions if enabling
+    const setting = newSettings.find((s) => s.id === id);
+    if (setting?.enabled) {
+      const hasPermission = await requestPermissions();
+      if (!hasPermission) {
+        Alert.alert(
+          "Permission Required",
+          "Please enable notifications in your device settings to receive reminders.",
+          [{ text: "OK" }]
+        );
+        // Revert the toggle
+        setSettings(settings);
+        return;
+      }
+    }
+
+    // Update notification schedules
+    try {
+      const preferences = {
+        daily_reminder: newSettings.find((s) => s.id === "daily_reminder")?.enabled ?? false,
+        weekly_leaderboard: newSettings.find((s) => s.id === "weekly_leaderboard")?.enabled ?? false,
+        badge_earned: newSettings.find((s) => s.id === "badge_earned")?.enabled ?? false,
+        featured_content: newSettings.find((s) => s.id === "featured_content")?.enabled ?? false,
+      };
+      await updateNotificationSchedules(preferences);
+    } catch (error) {
+      console.error("Error updating notification schedules:", error);
+      Alert.alert("Error", "Failed to update notification settings. Please try again.");
+      // Revert the toggle
+      setSettings(settings);
+    }
   };
 
   const enabledCount = settings.filter((s) => s.enabled).length;
