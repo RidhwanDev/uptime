@@ -1,25 +1,27 @@
 {
   "expo": {
-    "name": "uptime",
+    "name": "Social Uptime",
     "slug": "uptime",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "scheme": "uptime",
+    "scheme": "socialuptime",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "bundleIdentifier": "com.uptime.app",
+      "bundleIdentifier": "com.rrtechsolutions.social-uptime",
       "supportsTablet": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "associatedDomains": ["applinks:ridhwan.io"]
     },
     "android": {
+      "package": "com.rrtechsolutions.social-uptime",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

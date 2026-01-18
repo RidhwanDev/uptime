@@ -27,10 +27,6 @@ export default function OnboardingLayout() {
         options={{ title: 'Sign In' }}
       />
       <Stack.Screen
-        name="tiktok-auth"
-        options={{ title: 'Connect TikTok' }}
-      />
-      <Stack.Screen
         name="timezone-selection"
         options={{ title: 'Select Timezone' }}
       />

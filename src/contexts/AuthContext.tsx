@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import * as SecureStore from "expo-secure-store";
 import { upsertUser } from "../services/supabaseSync";
+import { refreshAccessToken } from "../services/tiktokAuth";
 
 interface AuthContextType {
   isAuthenticated: boolean;
@@ -24,6 +25,7 @@ interface AuthContextType {
     userInfo: { tiktokUserId: string; tiktokHandle: string; displayName: string; avatarUrl?: string }
   ) => Promise<void>;
   logout: () => Promise<void>;
+  getValidAccessToken: () => Promise<string | null>; // Get access token, refreshing if needed
   bypassLogin: () => Promise<void>; // DEV ONLY - bypass authentication
 }
 
@@ -33,6 +35,7 @@ const TOKEN_KEY = "tiktok_access_token";
 const REFRESH_TOKEN_KEY = "tiktok_refresh_token";
 const USER_INFO_KEY = "tiktok_user_info";
 const SUPABASE_USER_ID_KEY = "supabase_user_id";
+const TOKEN_EXPIRES_AT_KEY = "tiktok_token_expires_at";
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -74,9 +77,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     userInfo: { tiktokUserId: string; tiktokHandle: string; displayName: string; avatarUrl?: string }
   ) => {
     try {
+      // Calculate expiration time
+      const expiresAt = Date.now() + tokens.expiresIn * 1000;
+
       // Store tokens securely (local)
       await SecureStore.setItemAsync(TOKEN_KEY, tokens.accessToken);
       await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, tokens.refreshToken);
+      await SecureStore.setItemAsync(TOKEN_EXPIRES_AT_KEY, expiresAt.toString());
       await SecureStore.setItemAsync(USER_INFO_KEY, JSON.stringify(userInfo));
 
       // Upsert user to Supabase
@@ -112,10 +119,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const getValidAccessToken = async (): Promise<string | null> => {
+    try {
+      const accessToken = await SecureStore.getItemAsync(TOKEN_KEY);
+      const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+      const expiresAtStr = await SecureStore.getItemAsync(TOKEN_EXPIRES_AT_KEY);
+
+      if (!accessToken || !refreshToken) {
+        console.log("⚠️ No tokens found");
+        return null;
+      }
+
+      // Check if token is expired (with 5 minute buffer)
+      const now = Date.now();
+      const expiresAt = expiresAtStr ? parseInt(expiresAtStr, 10) : 0;
+      const bufferTime = 5 * 60 * 1000; // 5 minutes
+
+      if (expiresAt > 0 && now >= expiresAt - bufferTime) {
+        console.log("🔄 Token expired or expiring soon, refreshing...");
+        const refreshResult = await refreshAccessToken(refreshToken);
+
+        if (refreshResult.success && refreshResult.tokens) {
+          // Store new tokens
+          const newExpiresAt = now + refreshResult.tokens.expiresIn * 1000;
+          await SecureStore.setItemAsync(TOKEN_KEY, refreshResult.tokens.accessToken);
+          await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshResult.tokens.refreshToken);
+          await SecureStore.setItemAsync(TOKEN_EXPIRES_AT_KEY, newExpiresAt.toString());
+
+          // Update user state with new token
+          setUser((prev) => {
+            if (prev) {
+              return { ...prev, accessToken: refreshResult.tokens!.accessToken };
+            }
+            return prev;
+          });
+
+          // Update Supabase
+          const userInfoStr = await SecureStore.getItemAsync(USER_INFO_KEY);
+          if (userInfoStr) {
+            const userInfo = JSON.parse(userInfoStr);
+            await upsertUser({
+              tiktokUserId: userInfo.tiktokUserId,
+              tiktokHandle: userInfo.tiktokHandle,
+              displayName: userInfo.displayName,
+              avatarUrl: userInfo.avatarUrl,
+              accessToken: refreshResult.tokens.accessToken,
+              refreshToken: refreshResult.tokens.refreshToken,
+              expiresIn: refreshResult.tokens.expiresIn,
+            });
+          }
+
+          console.log("✅ Token refreshed successfully");
+          return refreshResult.tokens.accessToken;
+        } else {
+          console.error("❌ Failed to refresh token:", refreshResult.error);
+          // If refresh fails, user needs to re-login
+          await logout();
+          return null;
+        }
+      }
+
+      return accessToken;
+    } catch (error) {
+      console.error("❌ Error getting valid access token:", error);
+      return null;
+    }
+  };
+
   const logout = async () => {
     try {
       await SecureStore.deleteItemAsync(TOKEN_KEY);
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      await SecureStore.deleteItemAsync(TOKEN_EXPIRES_AT_KEY);
       await SecureStore.deleteItemAsync(USER_INFO_KEY);
       await SecureStore.deleteItemAsync(SUPABASE_USER_ID_KEY);
 
@@ -146,6 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         login,
         logout,
+        getValidAccessToken,
         bypassLogin,
       }}
     >

@@ -1,13 +1,42 @@
-import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { colors, spacing, typography } from '../../src/theme';
 import { Button } from '../../src/components';
+import { useAuth } from '../../src/contexts/AuthContext';
+import { authenticateWithTikTok } from '../../src/services/tiktokAuth';
 
 export default function SignUpScreen() {
   const router = useRouter();
+  const { login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
+
+  const handleTikTokLogin = async () => {
+    setIsLoading(true);
+    try {
+      const result = await authenticateWithTikTok();
+
+      if (result.success && result.tokens && result.userInfo) {
+        await login(result.tokens, result.userInfo);
+        router.replace('/(tabs)/dashboard');
+      } else {
+        Alert.alert(
+          'Authentication Failed',
+          result.error || 'Please try again.'
+        );
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      Alert.alert(
+        'Error',
+        error instanceof Error ? error.message : 'An unexpected error occurred'
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -16,11 +45,12 @@ export default function SignUpScreen() {
         <Text style={styles.title}>Create Account</Text>
         <Text style={styles.subtitle}>Sign up screen - Coming soon</Text>
         <Button
-          title="Continue with TikTok"
-          onPress={() => router.push('/(onboarding)/tiktok-auth')}
+          title={isLoading ? "Connecting..." : "Continue with TikTok"}
+          onPress={handleTikTokLogin}
           variant="primary"
           size="large"
           style={styles.button}
+          disabled={isLoading}
         />
         <Button
           title="Back"

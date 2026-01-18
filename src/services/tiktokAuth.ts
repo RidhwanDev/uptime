@@ -1,7 +1,8 @@
-import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import * as Crypto from "expo-crypto";
 import * as Linking from "expo-linking";
+import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 // Complete the web browser session when done
 WebBrowser.maybeCompleteAuthSession();
@@ -18,36 +19,35 @@ const TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 const TIKTOK_USER_INFO_URL =
   "https://open.tiktokapis.com/v2/user/info/?fields=open_id,union_id,avatar_url,display_name,username,is_verified";
 
-// Generate redirect URI
-// For development builds: uses custom scheme (uptime://)
-// For Expo Go: requires HTTPS proxy (auth.expo.io) or env variable override
-const REDIRECT_URI = AuthSession.makeRedirectUri({
-  scheme: "uptime",
-  path: "auth/callback",
-});
-
-// Get the final redirect URI to use
+// Get platform-specific redirect URI
+// TikTok requires HTTPS URLs for iOS/Android redirect URIs (Universal Links/App Links)
 const getRedirectUri = (): string => {
-  // Priority 1: Environment variable (for HTTPS override in Expo Go)
-  const envUri = process.env.EXPO_PUBLIC_REDIRECT_URI;
+  // Priority 1: Environment variable for HTTPS redirect URI (can override default)
+  const envUri = process.env.EXPO_PUBLIC_TIKTOK_REDIRECT_URI;
   if (envUri) {
     return envUri;
   }
 
-  // Priority 2: Auto-generated URI (works in development builds)
-  // In development builds, this will be: uptime://auth/callback
-  // In Expo Go, this will be: exp://192.168.x.x:8081/--/auth/callback
-  return REDIRECT_URI;
+  // Priority 2: Default to portfolio callback endpoint
+  // This endpoint redirects to the app's custom scheme: socialuptime://auth/callback
+  return "https://ridhwan.io/uptime/tiktok/callback";
+
+  // Priority 3: For web, try web-specific redirect URI (if different)
+  // if (Platform.OS === "web") {
+  //   const webUri = process.env.EXPO_PUBLIC_WEB_REDIRECT_URI;
+  //   if (webUri) {
+  //     return webUri;
+  //   }
+  // }
 };
 
-const FINAL_REDIRECT_URI = getRedirectUri();
-
-// Store PKCE values for manual URL completion
+// Store PKCE values for auth flow
 let storedCodeVerifier: string | null = null;
 let storedState: string | null = null;
 
 // Log configuration for debugging
-console.log("🔗 TikTok Redirect URI:", FINAL_REDIRECT_URI);
+const REDIRECT_URI = getRedirectUri();
+console.log("🔗 TikTok Redirect URI:", REDIRECT_URI);
 console.log(
   "⚠️  Copy this EXACT URI to TikTok developer settings (Redirect URI)"
 );
@@ -113,8 +113,10 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
       );
     }
 
+    const redirectUri = getRedirectUri();
     console.log("🚀 Starting TikTok OAuth flow...");
-    console.log("📍 Redirect URI:", FINAL_REDIRECT_URI);
+    console.log("📍 Platform:", Platform.OS);
+    console.log("📍 Redirect URI:", redirectUri);
 
     // Step 1: Generate PKCE
     const { codeVerifier, codeChallenge } = await generatePKCE();
@@ -125,7 +127,7 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
       Math.random().toString(36).substring(2, 15) +
       Math.random().toString(36).substring(2, 15);
 
-    // Store for manual URL completion fallback
+    // Store for auth completion
     storedCodeVerifier = codeVerifier;
     storedState = state;
 
@@ -140,27 +142,45 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     authUrl.searchParams.append("client_key", TIKTOK_CLIENT_KEY);
     authUrl.searchParams.append("response_type", "code");
     authUrl.searchParams.append("scope", scopes);
-    authUrl.searchParams.append("redirect_uri", FINAL_REDIRECT_URI);
+    authUrl.searchParams.append("redirect_uri", redirectUri);
     authUrl.searchParams.append("state", state);
     authUrl.searchParams.append("code_challenge", codeChallenge);
     authUrl.searchParams.append("code_challenge_method", "S256");
 
     console.log("🔗 Authorization URL:", authUrl.toString());
 
-    // Step 4: Open browser for authentication
-    // Try openAuthSessionAsync first, fall back to manual handling if needed
-    console.log("🌐 Opening TikTok authorization page...");
-    console.log("🔗 Expecting redirect to:", FINAL_REDIRECT_URI);
+    // Step 4: Open browser/app for authentication
+    console.log("🌐 Opening TikTok authorization...");
+    console.log("🔗 Expecting redirect to:", redirectUri);
 
     let redirectUrl: string | null = null;
 
-    // Set up a listener for deep links (backup in case openAuthSessionAsync doesn't work)
-    let linkingSubscription: { remove: () => void } | null = null;
+    // Set up a listener for deep links
+    // Handle both HTTPS Universal Links and custom scheme URLs
+    // The portfolio callback redirects to: socialuptime://auth/callback?code=...&state=...
     const linkPromise = new Promise<string>((resolve) => {
-      linkingSubscription = Linking.addEventListener("url", (event) => {
+      Linking.addEventListener("url", (event) => {
         console.log("🔗 Deep link received:", event.url);
+        // Check if URL contains auth code
         if (event.url.includes("code=")) {
-          resolve(event.url);
+          // For HTTPS Universal Links, check if it matches the redirect URI domain/path
+          if (
+            redirectUri.startsWith("https://") &&
+            event.url.startsWith(redirectUri)
+          ) {
+            resolve(event.url);
+          }
+          // For custom scheme (portfolio redirects to this)
+          else if (event.url.startsWith("socialuptime://auth/callback")) {
+            resolve(event.url);
+          }
+          // Fallback: accept any URL with auth/callback and code
+          else if (
+            event.url.includes("auth/callback") &&
+            event.url.includes("code=")
+          ) {
+            resolve(event.url);
+          }
         }
       });
     });
@@ -168,9 +188,8 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     try {
       const result = await WebBrowser.openAuthSessionAsync(
         authUrl.toString(),
-        FINAL_REDIRECT_URI,
+        redirectUri,
         {
-          // Try to dismiss the browser on iOS even if there's no matching redirect
           dismissButtonStyle: "close",
         }
       );
@@ -180,17 +199,7 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
       if (result.type === "success" && "url" in result) {
         redirectUrl = result.url;
         console.log("📥 Redirect URL from browser:", redirectUrl);
-      } else if (result.type === "cancel" || result.type === "dismiss") {
-        // Browser was closed - this is expected when auth.expo.io shows "Forbidden"
-        // User needs to paste the URL manually
-        console.log(
-          "📥 Browser closed (type:",
-          result.type,
-          ") - showing URL paste fallback"
-        );
-      }
-
-      if (result.type === "dismiss" && !redirectUrl) {
+      } else if (result.type === "dismiss" && !redirectUrl) {
         // Browser was dismissed - check if we got a link via the listener
         console.log("📥 Browser dismissed, checking for deep link...");
 
@@ -205,8 +214,8 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
           console.log("📥 Got URL from deep link:", redirectUrl);
         }
       }
-    } finally {
-      linkingSubscription?.remove();
+    } catch (error) {
+      console.error("Error in auth session:", error);
     }
 
     // If we still don't have a redirect URL, check the initial URL
@@ -214,23 +223,70 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     if (!redirectUrl) {
       const initialUrl = await Linking.getInitialURL();
       if (initialUrl && initialUrl.includes("code=")) {
-        redirectUrl = initialUrl;
-        console.log("📥 Got URL from initial URL:", redirectUrl);
+        // Check if it matches our redirect URI pattern
+        if (
+          (redirectUri.startsWith("https://") &&
+            initialUrl.startsWith(redirectUri)) ||
+          initialUrl.startsWith("socialuptime://auth/callback") ||
+          initialUrl.includes("auth/callback")
+        ) {
+          redirectUrl = initialUrl;
+          console.log("📥 Got URL from initial URL:", redirectUrl);
+        }
       }
     }
 
     if (!redirectUrl) {
-      // Return a specific error that tells the UI to show the URL paste fallback
       return {
         success: false,
-        error: "SHOW_URL_INPUT",
+        error: "Authentication was cancelled or failed. Please try again.",
       };
     }
 
     console.log("📥 Final redirect URL:", redirectUrl);
 
     // Step 5: Parse the redirect URL
-    const parsedUrl = new URL(redirectUrl);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(redirectUrl);
+    } catch {
+      // If URL parsing fails, try to extract code manually
+      const codeMatch = redirectUrl.match(/[?&]code=([^&]+)/);
+      const stateMatch = redirectUrl.match(/[?&]state=([^&]+)/);
+      const errorMatch = redirectUrl.match(/[?&]error=([^&]+)/);
+
+      if (errorMatch) {
+        return {
+          success: false,
+          error: decodeURIComponent(errorMatch[1]) || "Authorization failed",
+        };
+      }
+
+      if (!codeMatch) {
+        return { success: false, error: "No authorization code received" };
+      }
+
+      const code = decodeURIComponent(codeMatch[1]);
+      const returnedState = stateMatch
+        ? decodeURIComponent(stateMatch[1])
+        : null;
+
+      // Verify state matches (CSRF protection)
+      if (returnedState && returnedState !== state) {
+        console.warn("⚠️ State mismatch:", {
+          expected: state,
+          received: returnedState,
+        });
+        return {
+          success: false,
+          error: "State mismatch - possible CSRF attack",
+        };
+      }
+
+      // Exchange code for token
+      return await exchangeCodeForToken(code, codeVerifier, redirectUri);
+    }
+
     const code = parsedUrl.searchParams.get("code");
     const returnedState = parsedUrl.searchParams.get("state");
     const error = parsedUrl.searchParams.get("error");
@@ -259,153 +315,130 @@ export async function authenticateWithTikTok(): Promise<AuthResult> {
     console.log("✅ Authorization code received");
 
     // Step 6: Exchange code for access token
-    console.log("🔄 Exchanging code for access token...");
-
-    const tokenResponse = await fetch(TIKTOK_TOKEN_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({
-        client_key: TIKTOK_CLIENT_KEY,
-        client_secret: TIKTOK_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: FINAL_REDIRECT_URI,
-        code_verifier: codeVerifier,
-      }).toString(),
-    });
-
-    const tokenData = await tokenResponse.json();
-    console.log("📥 Token response status:", tokenResponse.status);
-
-    if (!tokenResponse.ok || tokenData.error) {
-      console.error("❌ Token exchange error:", tokenData);
-      return {
-        success: false,
-        error:
-          tokenData.error_description ||
-          tokenData.error ||
-          "Failed to exchange code for token",
-      };
-    }
-
-    const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token || "";
-    const expiresIn = tokenData.expires_in || 3600;
-
-    if (!accessToken) {
-      return { success: false, error: "No access token received" };
-    }
-
-    console.log("✅ Access token received");
-
-    // Step 7: Fetch user info
-    console.log("👤 Fetching user info...");
-
-    const userInfoResponse = await fetch(TIKTOK_USER_INFO_URL, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    const userInfoData = await userInfoResponse.json();
-    console.log("📥 User info response status:", userInfoResponse.status);
-
-    if (!userInfoResponse.ok || userInfoData.error) {
-      console.error("❌ User info error:", userInfoData);
-      // Still return success with tokens, just without user info
-      return {
-        success: true,
-        tokens: { accessToken, refreshToken, expiresIn },
-        userInfo: {
-          tiktokUserId: "unknown",
-          tiktokHandle: "unknown",
-          displayName: "TikTok User",
-        },
-      };
-    }
-
-    const user = userInfoData.data?.user;
-    console.log(
-      "✅ User info received:",
-      user?.display_name,
-      "@" + user?.username
-    );
-
-    return {
-      success: true,
-      tokens: { accessToken, refreshToken, expiresIn },
-      userInfo: {
-        tiktokUserId: user?.open_id || user?.union_id || "unknown",
-        tiktokHandle: user?.username || user?.display_name || "unknown",
-        displayName: user?.display_name || "TikTok User",
-        avatarUrl: user?.avatar_url,
-      },
-    };
+    return await exchangeCodeForToken(code, codeVerifier, redirectUri);
   } catch (error) {
     console.error("❌ TikTok authentication error:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",
     };
+  } finally {
+    // Clear stored values
+    storedCodeVerifier = null;
+    storedState = null;
   }
 }
 
+async function exchangeCodeForToken(
+  code: string,
+  codeVerifier: string,
+  redirectUri: string
+): Promise<AuthResult> {
+  console.log("🔄 Exchanging code for access token...");
+
+  const tokenResponse = await fetch(TIKTOK_TOKEN_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: new URLSearchParams({
+      client_key: TIKTOK_CLIENT_KEY,
+      client_secret: TIKTOK_CLIENT_SECRET,
+      code,
+      grant_type: "authorization_code",
+      redirect_uri: redirectUri,
+      code_verifier: codeVerifier,
+    }).toString(),
+  });
+
+  const tokenData = await tokenResponse.json();
+  console.log("📥 Token response status:", tokenResponse.status);
+
+  if (!tokenResponse.ok || tokenData.error) {
+    console.error("❌ Token exchange error:", tokenData);
+    return {
+      success: false,
+      error:
+        tokenData.error_description ||
+        tokenData.error ||
+        "Failed to exchange code for token",
+    };
+  }
+
+  const accessToken = tokenData.access_token;
+  const refreshToken = tokenData.refresh_token || "";
+  const expiresIn = tokenData.expires_in || 3600;
+
+  if (!accessToken) {
+    return { success: false, error: "No access token received" };
+  }
+
+  console.log("✅ Access token received");
+
+  // Step 7: Fetch user info
+  console.log("👤 Fetching user info...");
+
+  const userInfoResponse = await fetch(TIKTOK_USER_INFO_URL, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  const userInfoData = await userInfoResponse.json();
+  console.log("📥 User info response status:", userInfoResponse.status);
+
+  // TikTok returns error object even on success with code: "ok"
+  const hasError =
+    !userInfoResponse.ok ||
+    (userInfoData.error &&
+      userInfoData.error.code &&
+      userInfoData.error.code !== "ok");
+
+  if (hasError) {
+    console.error("❌ User info error:", userInfoData);
+    // Still return success with tokens, just without user info
+    return {
+      success: true,
+      tokens: { accessToken, refreshToken, expiresIn },
+      userInfo: {
+        tiktokUserId: "unknown",
+        tiktokHandle: "unknown",
+        displayName: "TikTok User",
+      },
+    };
+  }
+
+  const user = userInfoData.data?.user;
+  console.log(
+    "✅ User info received:",
+    user?.display_name,
+    "@" + user?.username
+  );
+
+  return {
+    success: true,
+    tokens: { accessToken, refreshToken, expiresIn },
+    userInfo: {
+      tiktokUserId: user?.open_id || user?.union_id || "unknown",
+      tiktokHandle: user?.username || user?.display_name || "unknown",
+      displayName: user?.display_name || "TikTok User",
+      avatarUrl: user?.avatar_url,
+    },
+  };
+}
+
 // Export redirect URI for easy access (to copy to TikTok settings)
-export const getTikTokRedirectUri = () => FINAL_REDIRECT_URI;
+export const getTikTokRedirectUri = () => getRedirectUri();
 
 /**
- * Complete authentication using a manually pasted URL
- * This is a fallback for when the browser doesn't redirect properly (e.g., Expo Go with auth.expo.io proxy)
+ * Refresh access token using refresh token
  */
-export async function completeAuthWithUrl(
-  pastedUrl: string
+export async function refreshAccessToken(
+  refreshToken: string
 ): Promise<AuthResult> {
   try {
-    console.log("🔗 Completing auth with pasted URL...");
-    console.log("📥 URL:", pastedUrl);
-
-    // Parse the URL to extract code and state
-    let code: string | null = null;
-    let returnedState: string | null = null;
-
-    try {
-      const parsedUrl = new URL(pastedUrl);
-      code = parsedUrl.searchParams.get("code");
-      returnedState = parsedUrl.searchParams.get("state");
-    } catch {
-      // URL parsing failed, try regex extraction
-      const codeMatch = pastedUrl.match(/[?&]code=([^&]+)/);
-      const stateMatch = pastedUrl.match(/[?&]state=([^&]+)/);
-
-      code = codeMatch ? decodeURIComponent(codeMatch[1]) : null;
-      returnedState = stateMatch ? decodeURIComponent(stateMatch[1]) : null;
-    }
-
-    if (!code) {
-      return { success: false, error: "No authorization code found in URL" };
-    }
-
-    console.log("✅ Authorization code extracted");
-
-    // Check if we have stored PKCE values
-    if (!storedCodeVerifier) {
-      return {
-        success: false,
-        error:
-          "Session expired. Please tap 'Log in with TikTok' again, then paste the URL.",
-      };
-    }
-
-    // Optionally verify state (skip if state doesn't match - user might have restarted)
-    if (storedState && returnedState && storedState !== returnedState) {
-      console.warn("⚠️ State mismatch, but continuing with manual flow");
-    }
-
-    // Exchange code for access token
-    console.log("🔄 Exchanging code for access token...");
+    console.log("🔄 Refreshing access token...");
 
     const tokenResponse = await fetch(TIKTOK_TOKEN_URL, {
       method: "POST",
@@ -415,92 +448,41 @@ export async function completeAuthWithUrl(
       body: new URLSearchParams({
         client_key: TIKTOK_CLIENT_KEY,
         client_secret: TIKTOK_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: FINAL_REDIRECT_URI,
-        code_verifier: storedCodeVerifier,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
       }).toString(),
     });
 
     const tokenData = await tokenResponse.json();
-    console.log("📥 Token response status:", tokenResponse.status);
-    console.log("📥 Token response:", JSON.stringify(tokenData, null, 2));
+    console.log("📥 Refresh token response status:", tokenResponse.status);
 
     if (!tokenResponse.ok || tokenData.error) {
-      console.error("❌ Token exchange error:", tokenData);
+      console.error("❌ Token refresh error:", tokenData);
       return {
         success: false,
         error:
           tokenData.error_description ||
           tokenData.error ||
-          `Token exchange failed (${tokenResponse.status})`,
+          "Failed to refresh token",
       };
     }
 
     const accessToken = tokenData.access_token;
-    const refreshToken = tokenData.refresh_token || "";
+    const newRefreshToken = tokenData.refresh_token || refreshToken; // Use new refresh token if provided, otherwise keep old one
     const expiresIn = tokenData.expires_in || 3600;
 
     if (!accessToken) {
       return { success: false, error: "No access token received" };
     }
 
-    console.log("✅ Access token received");
-
-    // Clear stored values
-    storedCodeVerifier = null;
-    storedState = null;
-
-    // Fetch user info
-    console.log("👤 Fetching user info...");
-
-    const userInfoResponse = await fetch(TIKTOK_USER_INFO_URL, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
-
-    const userInfoData = await userInfoResponse.json();
-    console.log("📥 User info response status:", userInfoResponse.status);
-
-    // TikTok returns error object even on success with code "ok"
-    const hasError =
-      userInfoData.error &&
-      userInfoData.error.code &&
-      userInfoData.error.code !== "ok";
-    if (!userInfoResponse.ok || hasError) {
-      console.error("❌ User info error:", userInfoData);
-      return {
-        success: true,
-        tokens: { accessToken, refreshToken, expiresIn },
-        userInfo: {
-          tiktokUserId: "unknown",
-          tiktokHandle: "unknown",
-          displayName: "TikTok User",
-        },
-      };
-    }
-
-    const user = userInfoData.data?.user;
-    console.log(
-      "✅ User info received:",
-      user?.display_name,
-      "@" + user?.username
-    );
+    console.log("✅ Access token refreshed");
 
     return {
       success: true,
-      tokens: { accessToken, refreshToken, expiresIn },
-      userInfo: {
-        tiktokUserId: user?.open_id || user?.union_id || "unknown",
-        tiktokHandle: user?.username || user?.display_name || "unknown",
-        displayName: user?.display_name || "TikTok User",
-        avatarUrl: user?.avatar_url,
-      },
+      tokens: { accessToken, refreshToken: newRefreshToken, expiresIn },
     };
   } catch (error) {
-    console.error("❌ Error completing auth:", error);
+    console.error("❌ Error refreshing token:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error occurred",

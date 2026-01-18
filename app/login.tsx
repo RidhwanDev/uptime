@@ -1,19 +1,46 @@
-import React from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
 import { colors, spacing, typography } from "../src/theme";
 import { Button } from "../src/components";
 import { useAuth } from "../src/contexts/AuthContext";
+import { authenticateWithTikTok } from "../src/services/tiktokAuth";
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { bypassLogin } = useAuth();
+  const { bypassLogin, login } = useAuth();
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleBypass = async () => {
     await bypassLogin();
     router.replace("/(tabs)/dashboard");
+  };
+
+  const handleTikTokLogin = async () => {
+    setIsLoading(true);
+    try {
+      const result = await authenticateWithTikTok();
+
+      if (result.success && result.tokens && result.userInfo) {
+        await login(result.tokens, result.userInfo);
+        router.replace("/(tabs)/dashboard");
+      } else {
+        Alert.alert(
+          "Authentication Failed",
+          result.error || "Please try again."
+        );
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      Alert.alert(
+        "Error",
+        error instanceof Error ? error.message : "An unexpected error occurred"
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -24,7 +51,7 @@ export default function LoginScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>Uptime</Text>
+          <Text style={styles.title}>Social Uptime</Text>
           <Text style={styles.subtitle}>Social Attendance for Creators</Text>
         </View>
 
@@ -36,11 +63,12 @@ export default function LoginScreen() {
         </View>
 
         <Button
-          title="Log in with TikTok"
-          onPress={() => router.push("/(onboarding)/tiktok-auth")}
+          title={isLoading ? "Connecting..." : "Log in with TikTok"}
+          onPress={handleTikTokLogin}
           variant="primary"
           size="large"
           style={styles.button}
+          disabled={isLoading}
         />
 
         {/* DEV ONLY - Bypass button */}

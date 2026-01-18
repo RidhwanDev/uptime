@@ -44,7 +44,7 @@ const openTikTokVideo = (videoId: string) => {
 };
 
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, getValidAccessToken } = useAuth();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -52,7 +52,7 @@ export default function DashboardScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const loadVideos = useCallback(async () => {
-    if (!user?.accessToken) {
+    if (!user) {
       setError("Not authenticated");
       setIsLoading(false);
       return;
@@ -60,7 +60,15 @@ export default function DashboardScreen() {
 
     try {
       setError(null);
-      const videos = await fetchAllUserVideos(user.accessToken, 100);
+      // Get valid access token (refreshes if needed)
+      const accessToken = await getValidAccessToken();
+      if (!accessToken) {
+        setError("Failed to get access token. Please log in again.");
+        setIsLoading(false);
+        return;
+      }
+
+      const videos = await fetchAllUserVideos(accessToken, 100);
       const uptimeStats = calculateUptimeStats(videos, 30);
       setStats(uptimeStats);
 
@@ -81,7 +89,7 @@ export default function DashboardScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [user?.accessToken, user?.id]);
+  }, [user, getValidAccessToken]);
 
   useEffect(() => {
     loadVideos();
