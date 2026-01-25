@@ -476,3 +476,56 @@ export async function getUserPrivacy(userId: string): Promise<boolean | null> {
     return null;
   }
 }
+
+// ============================================
+// ACCOUNT DELETION
+// ============================================
+
+/**
+ * Delete user account and all associated data
+ * This will cascade delete:
+ * - daily_posts
+ * - user_stats
+ * - user_achievements
+ * - Removes user from leaderboard view automatically
+ * 
+ * @param userId - The Supabase user ID to delete
+ * @param tiktokUserId - The TikTok user ID for validation
+ * @returns true if deletion was successful, false otherwise
+ */
+export async function deleteUserAccount(
+  userId: string,
+  tiktokUserId: string
+): Promise<boolean> {
+  try {
+    console.log("🗑️ Deleting user account:", userId);
+
+    // Call the secure database function that validates ownership
+    // This ensures users can only delete their own accounts
+    const { data, error } = await (supabase.rpc as any)(
+      "delete_user_account",
+      {
+        p_user_id: userId,
+        p_tiktok_user_id: tiktokUserId,
+      }
+    );
+
+    if (error) {
+      console.error("❌ Error deleting user account:", error);
+      console.error("❌ Error details:", JSON.stringify(error, null, 2));
+      return false;
+    }
+
+    // The function returns a boolean
+    if (data === false) {
+      console.error("❌ Account deletion validation failed");
+      return false;
+    }
+
+    console.log("✅ User account deleted successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Exception deleting user account:", error);
+    return false;
+  }
+}

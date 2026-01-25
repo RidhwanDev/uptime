@@ -1,22 +1,49 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Alert } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import React, { useState, useEffect, useRef } from "react";
+import { View, StyleSheet, Alert, Animated, Dimensions } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
-import { colors, spacing, typography } from "../src/theme";
-import { Button } from "../src/components";
+import { LinearGradient } from "expo-linear-gradient";
+import { colors, spacing } from "../src/theme";
 import { useAuth } from "../src/contexts/AuthContext";
 import { authenticateWithTikTok } from "../src/services/tiktokAuth";
+import {
+  FloatingComments,
+  LogoSection,
+  FeaturesSection,
+  LoginButton,
+  TermsText,
+} from "./login/components";
+
+const { height } = Dimensions.get("window");
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { bypassLogin, login } = useAuth();
+  const { login } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleBypass = async () => {
-    await bypassLogin();
-    router.replace("/(tabs)/dashboard");
-  };
+  // Animation values
+  const contentOpacity = useRef(new Animated.Value(0)).current;
+  const contentTranslateY = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    // Wait for logo animation, then animate content
+    const timer = setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(contentOpacity, {
+          toValue: 1,
+          duration: 400,
+          useNativeDriver: true,
+        }),
+        Animated.spring(contentTranslateY, {
+          toValue: 0,
+          friction: 8,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, 600);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleTikTokLogin = async () => {
     setIsLoading(true);
@@ -44,46 +71,46 @@ export default function LoginScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar style="light" />
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.header}>
-          <Text style={styles.title}>Social Uptime</Text>
-          <Text style={styles.subtitle}>Social Attendance for Creators</Text>
-        </View>
 
-        <View style={styles.description}>
-          <Text style={styles.descriptionText}>
-            Commit to daily posting, track your streak, and compete on the
-            leaderboard. Get featured when you stay consistent!
-          </Text>
-        </View>
+      <LinearGradient
+        colors={["#0B0A14", "#1A1528", "#0B0A14"]}
+        style={StyleSheet.absoluteFill}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
 
-        <Button
-          title={isLoading ? "Connecting..." : "Log in with TikTok"}
-          onPress={handleTikTokLogin}
-          variant="primary"
-          size="large"
-          style={styles.button}
-          disabled={isLoading}
-        />
+      <FloatingComments />
 
-        {/* DEV ONLY - Bypass button */}
-        <Button
-          title="🚧 DEV: Bypass Login"
-          onPress={handleBypass}
-          variant="secondary"
-          size="medium"
-          style={styles.devButton}
-        />
-        <Text style={styles.devNote}>
-          Development only - bypasses authentication
-        </Text>
-      </ScrollView>
-    </SafeAreaView>
+      <LinearGradient
+        colors={[
+          "transparent",
+          "rgba(11, 10, 20, 0.3)",
+          "rgba(11, 10, 20, 0.9)",
+          colors.background,
+        ]}
+        locations={[0, 0.35, 0.65, 0.85]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
+      <View style={styles.content}>
+        <LogoSection />
+        <Animated.View
+          style={[
+            styles.bottomSection,
+            {
+              opacity: contentOpacity,
+              transform: [{ translateY: contentTranslateY }],
+            },
+          ]}
+        >
+          <FeaturesSection />
+          <LoginButton isLoading={isLoading} onPress={handleTikTokLogin} />
+          <TermsText />
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
@@ -93,46 +120,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: spacing.lg,
-    paddingTop: spacing.xl,
-    flexGrow: 1,
-    justifyContent: "center",
+    flex: 1,
+    justifyContent: "space-between",
+    paddingTop: height * 0.2,
+    paddingBottom: spacing["2xl"],
   },
-  header: {
-    marginBottom: spacing["3xl"],
-    alignItems: "center",
-  },
-  title: {
-    fontSize: typography.fontSize["5xl"],
-    fontWeight: typography.fontWeight.bold,
-    color: colors.text,
-    marginBottom: spacing.sm,
-  },
-  subtitle: {
-    fontSize: typography.fontSize.lg,
-    color: colors.textSecondary,
-  },
-  description: {
-    marginBottom: spacing["2xl"],
-  },
-  descriptionText: {
-    fontSize: typography.fontSize.base,
-    color: colors.textSecondary,
-    lineHeight: typography.fontSize.base * typography.lineHeight.normal,
-    textAlign: "center",
-  },
-  button: {
-    marginTop: spacing.md,
-  },
-  devButton: {
-    marginTop: spacing.xl,
-    opacity: 0.7,
-  },
-  devNote: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textSecondary,
-    textAlign: "center",
-    marginTop: spacing.xs,
-    fontStyle: "italic",
+  bottomSection: {
+    paddingHorizontal: spacing.xl,
   },
 });

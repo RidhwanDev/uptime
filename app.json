@@ -8,17 +8,19 @@
     "userInterfaceStyle": "light",
     "scheme": "socialuptime",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0B0A14"
     },
     "ios": {
       "bundleIdentifier": "com.rrtechsolutions.social-uptime",
       "supportsTablet": true,
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
-      "associatedDomains": ["applinks:ridhwan.io"]
+      "associatedDomains": ["applinks:ridhwan.io"],
+      "appleTeamId": "89X78S524T"
     },
     "android": {
       "package": "com.rrtechsolutions.social-uptime",
