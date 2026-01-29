@@ -7,6 +7,7 @@
 const TIKTOK_VIDEO_LIST_URL = "https://open.tiktokapis.com/v2/video/list/";
 
 // Video fields we want to fetch
+// TikTok API v2 supports these engagement fields
 const VIDEO_FIELDS = [
   "id",
   "create_time",
@@ -15,6 +16,8 @@ const VIDEO_FIELDS = [
   "video_description",
   "view_count",
   "like_count",
+  "comment_count",
+  "share_count",
 ].join(",");
 
 export interface TikTokVideo {
@@ -25,6 +28,8 @@ export interface TikTokVideo {
   video_description?: string;
   view_count?: number;
   like_count?: number;
+  comment_count?: number;
+  share_count?: number;
 }
 
 export interface VideoListResponse {

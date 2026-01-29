@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Pressable,
   Linking,
+  Dimensions,
+  Animated,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
@@ -26,9 +28,13 @@ import { fullSyncForUser } from "../../src/services/supabaseSync";
 import { checkBadgeAchievements } from "../../src/services/notifications";
 import * as SecureStore from "expo-secure-store";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const VIEW_PREFERENCE_KEY = "dashboard_view_preference";
+
+type ViewMode = "activity" | "rhythm";
+
 // Open video in TikTok app or browser
 const openTikTokVideo = (videoId: string) => {
-  // Try TikTok app first, fall back to web
   const tiktokAppUrl = `tiktok://video/${videoId}`;
   const tiktokWebUrl = `https://www.tiktok.com/@/video/${videoId}`;
 
@@ -52,9 +58,43 @@ export default function DashboardScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stats, setStats] = useState<UptimeStats | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>("activity");
+  const slideAnim = useRef(new Animated.Value(0)).current;
 
   // Store previous stats for achievement comparison
   const PREV_STATS_KEY = "previous_stats";
+
+  // Load saved view preference
+  useEffect(() => {
+    const loadViewPreference = async () => {
+      try {
+        const savedView = await SecureStore.getItemAsync(VIEW_PREFERENCE_KEY);
+        if (savedView === "activity" || savedView === "rhythm") {
+          setViewMode(savedView);
+          slideAnim.setValue(savedView === "rhythm" ? 1 : 0);
+        }
+      } catch (error) {
+        console.error("Error loading view preference:", error);
+      }
+    };
+    loadViewPreference();
+  }, []);
+
+  // Save view preference when changed
+  const handleViewChange = async (mode: ViewMode) => {
+    setViewMode(mode);
+    Animated.spring(slideAnim, {
+      toValue: mode === "rhythm" ? 1 : 0,
+      useNativeDriver: false,
+      friction: 8,
+    }).start();
+
+    try {
+      await SecureStore.setItemAsync(VIEW_PREFERENCE_KEY, mode);
+    } catch (error) {
+      console.error("Error saving view preference:", error);
+    }
+  };
 
   const loadVideos = useCallback(async () => {
     if (!user) {
@@ -65,7 +105,6 @@ export default function DashboardScreen() {
 
     try {
       setError(null);
-      // Get valid access token (refreshes if needed)
       const accessToken = await getValidAccessToken();
       if (!accessToken) {
         setError("Failed to get access token. Please log in again.");
@@ -91,7 +130,6 @@ export default function DashboardScreen() {
           prevStats?.totalPosts
         );
 
-        // Save current stats as previous for next time
         await SecureStore.setItemAsync(
           PREV_STATS_KEY,
           JSON.stringify({
@@ -104,7 +142,7 @@ export default function DashboardScreen() {
         console.error("Error checking badge achievements:", error);
       }
 
-      // Sync to Supabase in background (non-blocking)
+      // Sync to Supabase in background
       if (user.id && videos.length > 0) {
         fullSyncForUser(user.id, videos).then((success) => {
           if (success) {
@@ -140,7 +178,6 @@ export default function DashboardScreen() {
     });
   };
 
-  // Format large numbers (1000 -> 1K, 1000000 -> 1M)
   const formatNumber = (num: number): string => {
     if (num >= 1000000) {
       return (num / 1000000).toFixed(1).replace(/\.0$/, "") + "M";
@@ -193,7 +230,7 @@ export default function DashboardScreen() {
                 : "Ready to post today? 🎬"}
             </Text>
           </View>
-          <Pressable onPress={() => router.push("/(tabs)/profile")}>
+          <Pressable onPress={() => router.push("/(tabs)/settings")}>
             {user?.avatarUrl ? (
               <Image
                 source={{ uri: user.avatarUrl }}
@@ -251,12 +288,66 @@ export default function DashboardScreen() {
           </View>
         </LinearGradient>
 
-        {/* Streak Calendar */}
-        <StreakCalendar
-          postDates={stats?.postDates}
-          daysPosted={stats?.daysPosted || 0}
-          totalDays={stats?.totalDays || 30}
-        />
+        {/* View Toggle */}
+        <View style={styles.viewToggleContainer}>
+          <Pressable
+            style={[
+              styles.viewToggleButton,
+              viewMode === "activity" && styles.viewToggleButtonActive,
+            ]}
+            onPress={() => handleViewChange("activity")}
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={16}
+              color={viewMode === "activity" ? colors.text : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.viewToggleText,
+                viewMode === "activity" && styles.viewToggleTextActive,
+              ]}
+            >
+              Activity
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.viewToggleButton,
+              viewMode === "rhythm" && styles.viewToggleButtonActive,
+            ]}
+            onPress={() => handleViewChange("rhythm")}
+          >
+            <Ionicons
+              name="grid-outline"
+              size={16}
+              color={viewMode === "rhythm" ? colors.text : colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.viewToggleText,
+                viewMode === "rhythm" && styles.viewToggleTextActive,
+              ]}
+            >
+              Rhythm
+            </Text>
+          </Pressable>
+        </View>
+
+        {/* Conditional View */}
+        {viewMode === "activity" ? (
+          <ActivityView
+            postDates={stats?.postDates}
+            daysPosted={stats?.daysPosted || 0}
+            totalDays={stats?.totalDays || 30}
+          />
+        ) : (
+          <RhythmHeatmap
+            postDates={stats?.postDates}
+            daysPosted={stats?.daysPosted || 0}
+            totalDays={stats?.totalDays || 30}
+          />
+        )}
 
         {/* Quick Stats Row */}
         <View style={styles.quickStats}>
@@ -334,20 +425,19 @@ export default function DashboardScreen() {
   );
 }
 
-// Generate calendar grid with proper week alignment
-// Shows 4 weeks back from today, plus the rest of the current week
+// ============================================
+// ACTIVITY VIEW (4-week calendar)
+// ============================================
+
 function generateCalendarWeeks(numWeeks: number): string[][] {
   const weeks: string[][] = [];
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  // Find the start of the week (Sunday) for the first week we want to show
-  // Go back (numWeeks - 1) weeks from today, then find the Sunday of that week
   const firstWeekStart = new Date(today);
-  const daysFromSunday = today.getDay(); // 0 = Sunday, 6 = Saturday
+  const daysFromSunday = today.getDay();
   firstWeekStart.setDate(today.getDate() - (numWeeks - 1) * 7 - daysFromSunday);
 
-  // Generate weeks
   for (let week = 0; week < numWeeks; week++) {
     const weekDays: string[] = [];
     for (let day = 0; day < 7; day++) {
@@ -362,7 +452,7 @@ function generateCalendarWeeks(numWeeks: number): string[][] {
   return weeks;
 }
 
-function StreakCalendar({
+function ActivityView({
   postDates,
   daysPosted,
   totalDays,
@@ -378,11 +468,12 @@ function StreakCalendar({
   return (
     <View style={styles.calendarContainer}>
       <View style={styles.calendarHeader}>
-        <Text style={styles.calendarTitle}>Activity</Text>
-        <Text style={styles.calendarSubtitle}>Last 4 weeks</Text>
+        <Text style={styles.calendarTitle}>Last 4 weeks</Text>
+        <Text style={styles.calendarSubtitle}>
+          {daysPosted}/{totalDays} days
+        </Text>
       </View>
 
-      {/* Day labels */}
       <View style={styles.calendarRow}>
         {dayLabels.map((label, index) => (
           <View key={index} style={styles.calendarCell}>
@@ -391,7 +482,6 @@ function StreakCalendar({
         ))}
       </View>
 
-      {/* Calendar weeks */}
       {weeks.map((week, weekIndex) => (
         <View key={weekIndex} style={styles.calendarRow}>
           {week.map((dateStr) => {
@@ -405,10 +495,7 @@ function StreakCalendar({
                   style={[
                     styles.calendarDay,
                     isFuture && styles.calendarDayFuture,
-                    !isFuture &&
-                      !isPosted &&
-                      !isToday &&
-                      styles.calendarDayEmpty,
+                    !isFuture && !isPosted && !isToday && styles.calendarDayEmpty,
                     isPosted && styles.calendarDayPosted,
                     isToday && !isPosted && styles.calendarDayToday,
                     isToday && isPosted && styles.calendarDayTodayPosted,
@@ -422,7 +509,6 @@ function StreakCalendar({
         </View>
       ))}
 
-      {/* Legend and Days Posted */}
       <View style={styles.calendarFooter}>
         <View style={styles.calendarLegend}>
           <View style={styles.legendItem}>
@@ -440,13 +526,148 @@ function StreakCalendar({
             <Text style={styles.legendText}>Today</Text>
           </View>
         </View>
-        <Text style={styles.daysPostedText}>
-          {daysPosted}/{totalDays} days
-        </Text>
       </View>
     </View>
   );
 }
+
+// ============================================
+// RHYTHM HEATMAP (8-week GitHub-style)
+// ============================================
+
+function generateHeatmapWeeks(numWeeks: number): string[][] {
+  const weeks: string[][] = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const currentDayOfWeek = today.getDay();
+  const endOfCurrentWeek = new Date(today);
+  endOfCurrentWeek.setDate(today.getDate() + (6 - currentDayOfWeek));
+
+  const startDate = new Date(endOfCurrentWeek);
+  startDate.setDate(startDate.getDate() - (numWeeks * 7 - 1));
+
+  for (let week = 0; week < numWeeks; week++) {
+    const weekDays: string[] = [];
+    for (let day = 0; day < 7; day++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + week * 7 + day);
+      weekDays.push(date.toISOString().split("T")[0]);
+    }
+    weeks.push(weekDays);
+  }
+
+  return weeks;
+}
+
+function getMonthLabels(weeks: string[][]): string[] {
+  const labels: string[] = [];
+  let lastMonth = -1;
+
+  weeks.forEach((week) => {
+    const firstDayOfWeek = new Date(week[0]);
+    const month = firstDayOfWeek.getMonth();
+
+    if (month !== lastMonth) {
+      labels.push(firstDayOfWeek.toLocaleDateString("en-US", { month: "short" }));
+      lastMonth = month;
+    } else {
+      labels.push("");
+    }
+  });
+
+  return labels;
+}
+
+function RhythmHeatmap({
+  postDates,
+  daysPosted,
+  totalDays,
+}: {
+  postDates?: Set<string>;
+  daysPosted: number;
+  totalDays: number;
+}) {
+  const weeks = generateHeatmapWeeks(8);
+  const today = new Date().toISOString().split("T")[0];
+  const monthLabels = getMonthLabels(weeks);
+
+  return (
+    <View style={styles.heatmapContainer}>
+      <View style={styles.heatmapHeader}>
+        <Text style={styles.heatmapTitle}>Your Rhythm</Text>
+        <Text style={styles.heatmapSubtitle}>Last 8 weeks</Text>
+      </View>
+
+      {/* Month labels */}
+      <View style={styles.monthLabelsRow}>
+        {monthLabels.map((label, idx) => (
+          <Text key={idx} style={styles.monthLabel}>
+            {label}
+          </Text>
+        ))}
+      </View>
+
+      {/* Heatmap grid */}
+      <View style={styles.heatmapGrid}>
+        {/* Day labels */}
+        <View style={styles.dayLabelsColumn}>
+          {["", "M", "", "W", "", "F", ""].map((label, idx) => (
+            <Text key={idx} style={styles.dayLabel}>
+              {label}
+            </Text>
+          ))}
+        </View>
+
+        {/* Weeks columns */}
+        <View style={styles.weeksContainer}>
+          {weeks.map((week, weekIdx) => (
+            <View key={weekIdx} style={styles.weekColumn}>
+              {week.map((dateStr) => {
+                const isPosted = postDates?.has(dateStr);
+                const isToday = dateStr === today;
+                const isFuture = dateStr > today;
+
+                return (
+                  <View
+                    key={dateStr}
+                    style={[
+                      styles.heatmapCell,
+                      isFuture && styles.heatmapCellFuture,
+                      !isFuture && !isPosted && styles.heatmapCellEmpty,
+                      isPosted && styles.heatmapCellPosted,
+                      isToday && styles.heatmapCellToday,
+                    ]}
+                  />
+                );
+              })}
+            </View>
+          ))}
+        </View>
+      </View>
+
+      {/* Legend */}
+      <View style={styles.heatmapLegend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.heatmapLegendDot, styles.heatmapCellEmpty]} />
+          <Text style={styles.legendText}>Missed</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.heatmapLegendDot, styles.heatmapCellPosted]} />
+          <Text style={styles.legendText}>Posted</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.heatmapLegendDot, styles.heatmapCellToday]} />
+          <Text style={styles.legendText}>Today</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ============================================
+// VIDEO THUMBNAIL
+// ============================================
 
 function VideoThumbnail({
   video,
@@ -489,6 +710,10 @@ function VideoThumbnail({
     </Pressable>
   );
 }
+
+// ============================================
+// STYLES
+// ============================================
 
 const styles = StyleSheet.create({
   container: {
@@ -565,7 +790,87 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
   },
-  // Streak Calendar styles
+  heroContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  heroLeft: {
+    flex: 1,
+  },
+  heroLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.bold,
+    color: "rgba(255,255,255,0.8)",
+    letterSpacing: 1,
+    marginBottom: spacing.xs,
+  },
+  streakRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+  },
+  heroNumber: {
+    fontSize: 48,
+    fontWeight: typography.fontWeight.bold,
+    color: "#FFF",
+    lineHeight: 52,
+  },
+  heroDays: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.semibold,
+    color: "rgba(255,255,255,0.9)",
+    marginLeft: spacing.sm,
+  },
+  heroSubtext: {
+    fontSize: typography.fontSize.sm,
+    color: "rgba(255,255,255,0.85)",
+    marginTop: spacing.xs,
+  },
+  heroRight: {
+    marginLeft: spacing.lg,
+  },
+  flameContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  flameEmoji: {
+    fontSize: 28,
+  },
+
+  // View Toggle
+  viewToggleContainer: {
+    flexDirection: "row",
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: spacing.md,
+  },
+  viewToggleButton: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: spacing.sm,
+    borderRadius: 8,
+    gap: spacing.xs,
+  },
+  viewToggleButtonActive: {
+    backgroundColor: colors.backgroundTertiary,
+  },
+  viewToggleText: {
+    fontSize: typography.fontSize.sm,
+    color: colors.textSecondary,
+    fontWeight: typography.fontWeight.medium,
+  },
+  viewToggleTextActive: {
+    color: colors.text,
+  },
+
+  // Activity Calendar styles
   calendarContainer: {
     backgroundColor: colors.backgroundSecondary,
     borderRadius: 12,
@@ -641,18 +946,13 @@ const styles = StyleSheet.create({
   },
   calendarFooter: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "center",
     alignItems: "center",
     marginTop: spacing.sm,
   },
   calendarLegend: {
     flexDirection: "row",
     gap: spacing.md,
-  },
-  daysPostedText: {
-    fontSize: typography.fontSize.xs,
-    color: colors.textSecondary,
-    fontWeight: typography.fontWeight.medium,
   },
   legendItem: {
     flexDirection: "row",
@@ -678,56 +978,98 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: colors.textSecondary,
   },
-  heroContent: {
+
+  // Rhythm Heatmap styles
+  heatmapContainer: {
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: 12,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  heatmapHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: spacing.sm,
   },
-  heroLeft: {
-    flex: 1,
+  heatmapTitle: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+    color: colors.text,
   },
-  heroLabel: {
+  heatmapSubtitle: {
     fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.bold,
-    color: "rgba(255,255,255,0.8)",
-    letterSpacing: 1,
+    color: colors.textSecondary,
+  },
+  monthLabelsRow: {
+    flexDirection: "row",
+    marginLeft: 20,
     marginBottom: spacing.xs,
   },
-  streakRow: {
+  monthLabel: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    width: (SCREEN_WIDTH - spacing.lg * 2 - spacing.md * 2 - 20) / 8,
+    textAlign: "left",
+  },
+  heatmapGrid: {
     flexDirection: "row",
-    alignItems: "baseline",
   },
-  heroNumber: {
-    fontSize: 48,
-    fontWeight: typography.fontWeight.bold,
-    color: "#FFF",
-    lineHeight: 52,
+  dayLabelsColumn: {
+    width: 16,
+    marginRight: spacing.xs,
   },
-  heroDays: {
-    fontSize: typography.fontSize.xl,
-    fontWeight: typography.fontWeight.semibold,
-    color: "rgba(255,255,255,0.9)",
-    marginLeft: spacing.sm,
+  dayLabel: {
+    fontSize: 9,
+    color: colors.textTertiary,
+    height: 14,
+    lineHeight: 14,
+    textAlign: "right",
   },
-  heroSubtext: {
-    fontSize: typography.fontSize.sm,
-    color: "rgba(255,255,255,0.85)",
-    marginTop: spacing.xs,
+  weeksContainer: {
+    flexDirection: "row",
+    flex: 1,
+    justifyContent: "space-between",
   },
-  heroRight: {
-    marginLeft: spacing.lg,
+  weekColumn: {
+    gap: 2,
   },
-  flameContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(255,255,255,0.2)",
+  heatmapCell: {
+    width: 12,
+    height: 12,
+    borderRadius: 2,
+  },
+  heatmapCellEmpty: {
+    backgroundColor: colors.backgroundTertiary,
+  },
+  heatmapCellFuture: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.border,
+    opacity: 0.3,
+  },
+  heatmapCellPosted: {
+    backgroundColor: colors.success,
+  },
+  heatmapCellToday: {
+    backgroundColor: colors.accent,
+  },
+  heatmapLegend: {
+    flexDirection: "row",
     justifyContent: "center",
-    alignItems: "center",
+    gap: spacing.lg,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  flameEmoji: {
-    fontSize: 28,
+  heatmapLegendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 2,
   },
+
+  // Quick Stats
   quickStats: {
     flexDirection: "row",
     backgroundColor: colors.backgroundSecondary,
@@ -762,6 +1104,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.border,
     marginVertical: spacing.xs,
   },
+
+  // Section
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -777,6 +1121,8 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
   },
+
+  // Videos
   videosContainer: {
     paddingBottom: spacing.md,
   },
