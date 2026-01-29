@@ -1,5 +1,5 @@
 import { Stack } from "expo-router";
-import { colors } from "../../src/theme";
+import { colors } from "../../../src/theme";
 
 export default function SettingsLayout() {
   return (
@@ -9,12 +9,12 @@ export default function SettingsLayout() {
           backgroundColor: colors.background,
         },
         headerTintColor: colors.text,
-        headerBackTitle: "Profile",
+        headerBackVisible: true,
         contentStyle: {
           backgroundColor: colors.background,
         },
+        headerShown: true,
       }}
     />
   );
 }
-

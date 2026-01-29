@@ -1,14 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, ScrollView, Switch, Alert } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Switch,
+  Alert,
+} from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typography } from "../../src/theme";
+import { colors, spacing, typography } from "../../../src/theme";
 import {
   getNotificationPreferences,
   updateNotificationSchedules,
   requestPermissions,
-} from "../../src/services/notifications";
+} from "../../../src/services/notifications";
 
 interface NotificationSetting {
   id: string;
@@ -102,15 +109,24 @@ export default function NotificationsScreen() {
     // Update notification schedules
     try {
       const preferences = {
-        daily_reminder: newSettings.find((s) => s.id === "daily_reminder")?.enabled ?? false,
-        weekly_leaderboard: newSettings.find((s) => s.id === "weekly_leaderboard")?.enabled ?? false,
-        badge_earned: newSettings.find((s) => s.id === "badge_earned")?.enabled ?? false,
-        featured_content: newSettings.find((s) => s.id === "featured_content")?.enabled ?? false,
+        daily_reminder:
+          newSettings.find((s) => s.id === "daily_reminder")?.enabled ?? false,
+        weekly_leaderboard:
+          newSettings.find((s) => s.id === "weekly_leaderboard")?.enabled ??
+          false,
+        badge_earned:
+          newSettings.find((s) => s.id === "badge_earned")?.enabled ?? false,
+        featured_content:
+          newSettings.find((s) => s.id === "featured_content")?.enabled ??
+          false,
       };
       await updateNotificationSchedules(preferences);
     } catch (error) {
       console.error("Error updating notification schedules:", error);
-      Alert.alert("Error", "Failed to update notification settings. Please try again.");
+      Alert.alert(
+        "Error",
+        "Failed to update notification settings. Please try again."
+      );
       // Revert the toggle
       setSettings(settings);
     }
@@ -178,7 +194,9 @@ export default function NotificationsScreen() {
                   false: colors.backgroundTertiary,
                   true: colors.primary + "60",
                 }}
-                thumbColor={setting.enabled ? colors.primary : colors.textSecondary}
+                thumbColor={
+                  setting.enabled ? colors.primary : colors.textSecondary
+                }
               />
             </View>
           ))}
@@ -186,10 +204,14 @@ export default function NotificationsScreen() {
 
         {/* Info Footer */}
         <View style={styles.footer}>
-          <Ionicons name="information-circle" size={16} color={colors.textTertiary} />
+          <Ionicons
+            name="information-circle"
+            size={16}
+            color={colors.textTertiary}
+          />
           <Text style={styles.footerText}>
-            You can change these settings at any time. Notifications help you stay
-            consistent and never miss important updates.
+            You can change these settings at any time. Notifications help you
+            stay consistent and never miss important updates.
           </Text>
         </View>
       </ScrollView>
@@ -282,4 +304,3 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 });
-

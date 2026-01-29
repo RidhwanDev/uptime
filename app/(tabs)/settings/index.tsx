@@ -12,11 +12,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
-import { useRouter } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { colors, spacing, typography } from "../../src/theme";
-import { useAuth } from "../../src/contexts/AuthContext";
+import { colors, spacing, typography } from "../../../src/theme";
+import { useAuth } from "../../../src/contexts/AuthContext";
 import {
   fetchAllAchievements,
   fetchUserAchievements,
@@ -25,9 +25,8 @@ import {
   updateUserPrivacy,
   getUserPrivacy,
   checkAndAwardAchievements,
-  deleteUserAccount,
-} from "../../src/services/supabaseSync";
-import type { Achievement, UserStats } from "../../src/lib/database.types";
+} from "../../../src/services/supabaseSync";
+import type { UserStats } from "../../../src/lib/database.types";
 import Constants from "expo-constants";
 
 const APP_VERSION = Constants.expoConfig?.version || "1.0.0";
@@ -121,6 +120,10 @@ export default function ProfileScreen() {
     router.push("/settings/notifications");
   };
 
+  const handleAccount = () => {
+    router.push("/settings/account");
+  };
+
   const handlePrivacy = async () => {
     if (!user?.id) return;
 
@@ -172,75 +175,16 @@ export default function ProfileScreen() {
     );
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "Are you sure you want to delete your account? This action cannot be undone and will permanently delete:\n\n• Your profile\n• All your posts and stats\n• Your achievements\n• Your leaderboard position",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: async () => {
-            // Second confirmation
-            Alert.alert(
-              "Final Confirmation",
-              "This will permanently delete your account. Are you absolutely sure?",
-              [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Yes, Delete My Account",
-                  style: "destructive",
-                  onPress: async () => {
-                    if (!user?.id || !user?.tiktokUserId) {
-                      Alert.alert("Error", "Unable to identify user account.");
-                      return;
-                    }
-
-                    // Show loading state
-                    const loadingAlert = Alert.alert(
-                      "Deleting Account",
-                      "Please wait...",
-                      [],
-                      { cancelable: false }
-                    );
-
-                    try {
-                      const success = await deleteUserAccount(
-                        user.id,
-                        user.tiktokUserId
-                      );
-
-                      if (success) {
-                        // Logout and redirect to login
-                        await logout();
-                        router.replace("/login");
-                      } else {
-                        Alert.alert(
-                          "Error",
-                          "Failed to delete account. Please try again or contact support."
-                        );
-                      }
-                    } catch (error) {
-                      console.error("Error deleting account:", error);
-                      Alert.alert(
-                        "Error",
-                        "An unexpected error occurred. Please try again or contact support."
-                      );
-                    }
-                  },
-                },
-              ]
-            );
-          },
-        },
-      ]
-    );
-  };
-
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+      <Stack.Screen
+        options={{
+          title: "Profile",
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+        }}
+      />
       <ScrollView
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
@@ -342,6 +286,12 @@ export default function ProfileScreen() {
         {/* Account Section */}
         <View style={styles.menuSection}>
           <MenuItem
+            icon="person-outline"
+            label="Account"
+            sublabel="Manage your account"
+            onPress={handleAccount}
+          />
+          <MenuItem
             icon="help-circle-outline"
             label="Help & Support"
             onPress={handleHelpSupport}
@@ -358,15 +308,6 @@ export default function ProfileScreen() {
             onPress={handleAbout}
           />
         </View>
-
-        {/* Delete Account */}
-        <Pressable
-          style={styles.deleteAccountButton}
-          onPress={handleDeleteAccount}
-        >
-          <Ionicons name="trash-outline" size={20} color={colors.error} />
-          <Text style={styles.deleteAccountText}>Delete Account</Text>
-        </Pressable>
 
         {/* Logout */}
         <Pressable style={styles.logoutButton} onPress={handleLogout}>
@@ -683,23 +624,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     color: colors.textSecondary,
     marginTop: 1,
-  },
-  deleteAccountButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    backgroundColor: colors.error + "15",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.error + "30",
-    marginTop: spacing.md,
-  },
-  deleteAccountText: {
-    fontSize: typography.fontSize.base,
-    fontWeight: typography.fontWeight.semibold,
-    color: colors.error,
   },
   logoutButton: {
     flexDirection: "row",

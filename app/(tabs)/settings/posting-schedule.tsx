@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { Stack } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, spacing, typography } from "../../src/theme";
+import { colors, spacing, typography } from "../../../src/theme";
 
 export default function PostingScheduleScreen() {
   return (
@@ -37,13 +37,17 @@ export default function PostingScheduleScreen() {
         <View style={styles.infoSection}>
           <View style={styles.infoItem}>
             <View style={styles.infoIcon}>
-              <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+              <Ionicons
+                name="checkmark-circle"
+                size={20}
+                color={colors.success}
+              />
             </View>
             <View style={styles.infoContent}>
               <Text style={styles.infoTitle}>Simple & Effective</Text>
               <Text style={styles.infoText}>
-                Daily posting is the best way to grow on TikTok and build a loyal
-                audience.
+                Daily posting is the best way to grow on TikTok and build a
+                loyal audience.
               </Text>
             </View>
           </View>
@@ -80,7 +84,8 @@ export default function PostingScheduleScreen() {
           <Ionicons name="sparkles" size={24} color={colors.primary} />
           <Text style={styles.comingSoonTitle}>More Options Coming Soon</Text>
           <Text style={styles.comingSoonText}>
-            Custom posting schedules, weekly goals, and rest days are on the way!
+            Custom posting schedules, weekly goals, and rest days are on the
+            way!
           </Text>
         </View>
       </ScrollView>
@@ -187,4 +192,3 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
 });
-
